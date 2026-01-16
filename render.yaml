@@ -1,12 +1,15 @@
 services:
   - type: web
-    name: analyseur-ebay
+    name: ebay-business-analyzer
     env: python
-    runtime: python-3.11.9
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-    autoDeploy: true
-    healthCheckPath: /health
+      - key: DEEPSEEK_API_KEY
+        sync: false  # À configurer manuellement
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DEBUG_MODE
+        value: false
