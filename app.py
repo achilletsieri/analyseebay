@@ -2,6 +2,8 @@
 from flask import Flask, request, render_template_string
 import requests
 from bs4 import BeautifulSoup
+# Utiliser html5lib au lieu de lxml
+soup = BeautifulSoup(html, 'html5lib')
 import re
 from datetime import datetime
 import time
