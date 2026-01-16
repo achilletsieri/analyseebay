@@ -1,979 +1,707 @@
-# app.py - VERSION AVEC API EBAY OFFICIELLE (CORRIGÉE)
+# app_debug.py - VERSION AVEC LOGGING COMPLET
+import os
+import json
+import time
 from flask import Flask, request, render_template_string, jsonify
 import requests
-import json
-import os
-import re  # IMPORT MANQUANT
+import logging
 from datetime import datetime
-from urllib.parse import quote
+
+# Configuration logging DÉTAILLÉE
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('ebay_debug.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Activer le logging des requêtes HTTP
+logging.getLogger('urllib3').setLevel(logging.DEBUG)
 
 app = Flask(__name__)
 
-# ========== CONFIGURATION API EBAY ==========
+# Configuration
 EBAY_APP_ID = os.environ.get('EBAY_APP_ID', '')
 EBAY_CERT_ID = os.environ.get('EBAY_CERT_ID', '')
 EBAY_ACCESS_TOKEN = os.environ.get('EBAY_ACCESS_TOKEN', '')
 
-# ========== HTML PROFESSIONNEL ==========
-HTML = '''
+logger.info(f"App ID configuré: {'OUI' if EBAY_APP_ID else 'NON'}")
+logger.info(f"Cert ID configuré: {'OUI' if EBAY_CERT_ID else 'NON'}")
+logger.info(f"Access Token configuré: {'OUI' if EBAY_ACCESS_TOKEN else 'NON'}")
+
+# HTML pour visualiser les logs
+HTML_DEBUG = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>🚀 Analyseur eBay Pro - API Officielle</title>
+    <title>🔍 Debug eBay API - Monitor Complet</title>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-            margin: 0;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Courier New', monospace; background: #0f172a; color: #e2e8f0; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        .header { 
+            background: linear-gradient(135deg, #1e40af, #7c3aed);
+            padding: 20px; border-radius: 10px; 
+            margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
         
-        .container {
-            max-width: 1200px;
-            margin: 40px auto;
-            background: white;
-            border-radius: 24px;
-            padding: 40px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .panels { grid-template-columns: 1fr; } }
+        
+        .panel { 
+            background: #1e293b; border: 1px solid #334155; 
+            border-radius: 8px; padding: 15px; 
         }
         
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #e5e7eb;
+        .panel h3 { 
+            color: #60a5fa; margin-bottom: 15px; 
+            padding-bottom: 8px; border-bottom: 2px solid #3b82f6;
         }
         
-        h1 {
-            color: #2c3e50;
-            font-size: 2.8rem;
+        .status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .status-item { padding: 10px; background: #334155; border-radius: 5px; }
+        .status-label { font-size: 0.9em; color: #94a3b8; }
+        .status-value { font-weight: bold; margin-top: 5px; }
+        
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .warning { color: #fbbf24; }
+        
+        .test-form { margin-top: 20px; }
+        .test-form input { 
+            width: 100%; padding: 12px; background: #334155; 
+            border: 1px solid #475569; color: white; border-radius: 5px;
             margin-bottom: 10px;
-            background: linear-gradient(135deg, #2563eb, #7c3aed);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
+        }
+        .test-form button { 
+            background: #3b82f6; color: white; border: none; 
+            padding: 12px 24px; border-radius: 5px; cursor: pointer;
+            font-weight: bold; width: 100%;
+        }
+        .test-form button:hover { background: #2563eb; }
+        
+        .logs { 
+            background: #0f172a; padding: 15px; border-radius: 5px;
+            font-family: 'Courier New', monospace; font-size: 12px;
+            max-height: 400px; overflow-y: auto; white-space: pre-wrap;
+            border: 1px solid #334155;
         }
         
-        .badge {
-            display: inline-block;
-            background: #10b981;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            margin-bottom: 20px;
+        .log-entry { margin-bottom: 5px; padding: 3px; }
+        .log-time { color: #94a3b8; }
+        .log-level-info { color: #60a5fa; }
+        .log-level-debug { color: #a78bfa; }
+        .log-level-error { color: #f87171; background: rgba(248,113,113,0.1); }
+        
+        .response-section { margin-top: 20px; }
+        .response-box { 
+            background: #1e293b; padding: 15px; border-radius: 5px;
+            font-family: monospace; font-size: 12px; 
+            max-height: 500px; overflow-y: auto;
+            white-space: pre-wrap; word-wrap: break-word;
+            border: 1px solid #475569;
         }
         
-        .dashboard {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 30px;
-            margin-bottom: 40px;
+        .toggle-btn { 
+            background: #475569; color: white; border: none;
+            padding: 8px 16px; border-radius: 5px; cursor: pointer;
+            margin: 5px; font-size: 0.9em;
         }
         
-        @media (max-width: 1024px) {
-            .dashboard { grid-template-columns: 1fr; }
-        }
+        .raw-data { display: none; }
+        .visible { display: block; }
         
-        .input-card, .results-card {
-            background: #f8f9fa;
-            padding: 30px;
-            border-radius: 16px;
-            border: 1px solid #e5e7eb;
+        .stats { display: flex; gap: 15px; margin-top: 15px; }
+        .stat { 
+            background: linear-gradient(135deg, #1e40af, #7c3aed);
+            padding: 10px 15px; border-radius: 5px; text-align: center;
         }
+        .stat-value { font-size: 1.5em; font-weight: bold; }
+        .stat-label { font-size: 0.8em; opacity: 0.9; }
         
-        .url-input {
-            width: 100%;
-            padding: 16px 20px;
-            font-size: 16px;
-            border: 2px solid #d1d5db;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            transition: all 0.3s;
+        .quick-tests { margin-top: 20px; }
+        .test-btn { 
+            background: #475569; color: white; border: none;
+            padding: 8px 12px; border-radius: 5px; cursor: pointer;
+            margin: 0 5px 5px 0; font-size: 0.9em;
         }
-        
-        .url-input:focus {
-            outline: none;
-            border-color: #2563eb;
-            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
-        }
-        
-        .analyze-btn {
-            background: linear-gradient(135deg, #2563eb, #7c3aed);
-            color: white;
-            border: none;
-            padding: 18px 40px;
-            font-size: 18px;
-            font-weight: 600;
-            border-radius: 12px;
-            cursor: pointer;
-            width: 100%;
-            transition: transform 0.2s;
-        }
-        
-        .analyze-btn:hover {
-            transform: translateY(-2px);
-        }
-        
-        .analyze-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 40px;
-            display: none;
-        }
-        
-        .spinner {
-            border: 4px solid #e5e7eb;
-            border-top: 4px solid #2563eb;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .product-display {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 30px;
-            margin-bottom: 40px;
-        }
-        
-        .product-image {
-            background: #f1f5f9;
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-        }
-        
-        .product-image img {
-            max-width: 100%;
-            border-radius: 8px;
-        }
-        
-        .product-info {
-            padding: 20px;
-        }
-        
-        .price-tag {
-            font-size: 2.5rem;
-            font-weight: 800;
-            color: #059669;
-            margin: 10px 0;
-        }
-        
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        
-        .metric-card {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            border-left: 4px solid #2563eb;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        
-        .metric-label {
-            font-size: 0.9rem;
-            color: #6b7280;
-            margin-bottom: 5px;
-        }
-        
-        .metric-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #1f2937;
-        }
-        
-        .recommendations {
-            background: white;
-            padding: 30px;
-            border-radius: 16px;
-            margin-top: 30px;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .rec-item {
-            padding: 15px;
-            margin-bottom: 15px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            border-left: 4px solid #10b981;
-        }
-        
-        .rec-title {
-            font-weight: 600;
-            color: #1f2937;
-            margin-bottom: 5px;
-        }
-        
-        .rec-desc {
-            color: #4b5563;
-            font-size: 0.95rem;
-        }
-        
-        .api-status {
-            background: #e0f2fe;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 4px solid #2563eb;
-        }
-        
-        .debug-btn {
-            background: #374151;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-top: 20px;
-            font-size: 14px;
-        }
-        
-        .raw-data {
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 12px;
-            background: #1f2937;
-            color: #e5e7eb;
-            padding: 20px;
-            border-radius: 8px;
-            overflow: auto;
-            max-height: 400px;
-            margin-top: 15px;
-            display: none;
-        }
-        
-        .success-badge {
-            background: #d1fae5;
-            color: #059669;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 20px;
-        }
-        
-        .error-box {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 20px;
-            border-radius: 12px;
-            margin: 20px 0;
-            border-left: 4px solid #dc2626;
-        }
-        
-        .quick-links {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .quick-link {
-            background: #e0f2fe;
-            color: #2563eb;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            border: 1px solid #bfdbfe;
-        }
-        
-        .quick-link:hover {
-            background: #dbeafe;
-        }
+        .test-btn:hover { background: #3b82f6; }
     </style>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <div class="header">
-            <h1><i class="fas fa-rocket"></i> Analyseur eBay Pro</h1>
-            <div class="badge">
-                <i class="fas fa-shield-check"></i> API eBay Officielle
-            </div>
-            <p style="color: #6b7280;">Analyse professionnelle avec données directes eBay</p>
+            <h1>🔍 eBay API Debug Monitor</h1>
+            <p>Monitor en temps réel des requêtes API eBay</p>
         </div>
         
-        <!-- API Status -->
-        <div class="api-status">
-            <i class="fas fa-plug"></i>
-            <strong>Statut API :</strong> 
-            {% if api_configured %}
-                <span style="color: #059669;">✓ Connecté à l'API eBay</span>
-            {% else %}
-                <span style="color: #dc2626;">✗ API non configurée</span>
-                <p style="margin-top: 10px; font-size: 0.9rem;">
-                    Configurez EBAY_APP_ID, EBAY_CERT_ID et EBAY_ACCESS_TOKEN dans les variables d'environnement.
-                </p>
-            {% endif %}
-        </div>
-        
-        <!-- Dashboard -->
-        <div class="dashboard">
-            <!-- Input Section -->
-            <div class="input-card">
-                <h2><i class="fas fa-search"></i> Analyse de produit</h2>
-                
-                <form id="analyseForm" method="POST" action="/">
-                    <input type="text" 
-                           class="url-input" 
-                           name="url" 
-                           placeholder="Collez l'URL eBay ou l'Item ID (ex: 273959479131)"
-                           value="273959479131"  <!-- Exemple: Item ID -->
-                           required>
-                    
-                    <button type="submit" class="analyze-btn" id="submitBtn">
-                        <i class="fas fa-chart-line"></i> Analyser avec API eBay
-                    </button>
-                </form>
-                
-                <div class="loading" id="loading">
-                    <div class="spinner"></div>
-                    <p>Connexion à l'API eBay en cours...</p>
-                </div>
-                
-                <div class="quick-links">
-                    <div class="quick-link" onclick="document.querySelector('.url-input').value='273959479131'">
-                        📷 Appareil photo
+        <div class="panels">
+            <!-- Panel 1: Status -->
+            <div class="panel">
+                <h3>📊 Status API</h3>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <div class="status-label">App ID</div>
+                        <div class="status-value {% if not app_id %}error{% endif %}">
+                            {{ '✓ Configuré' if app_id else '✗ Manquant' }}
+                        </div>
                     </div>
-                    <div class="quick-link" onclick="document.querySelector('.url-input').value='305220553186'">
-                        ⌚ Montre
+                    <div class="status-item">
+                        <div class="status-label">Cert ID</div>
+                        <div class="status-value {% if not cert_id %}error{% endif %}">
+                            {{ '✓ Configuré' if cert_id else '✗ Manquant' }}
+                        </div>
                     </div>
-                    <div class="quick-link" onclick="document.querySelector('.url-input').value='404043745746'">
-                        🎧 Écouteurs
+                    <div class="status-item">
+                        <div class="status-label">Access Token</div>
+                        <div class="status-value {% if not token %}error{% endif %}">
+                            {% if token %}
+                                ✓ Présent ({{ token[:20] }}...)
+                            {% else %}
+                                ✗ Manquant
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Dernier Test</div>
+                        <div class="status-value {% if last_status == 200 %}success{% else %}error{% endif %}">
+                            {{ last_status or 'Non testé' }}
+                        </div>
                     </div>
                 </div>
                 
-                <div style="margin-top: 30px; font-size: 0.9rem; color: #6b7280;">
-                    <p><i class="fas fa-info-circle"></i> <strong>Format accepté :</strong></p>
-                    <ul style="padding-left: 20px;">
-                        <li>Item ID: <code>273959479131</code></li>
-                        <li>URL complète: <code>https://www.ebay.com/itm/273959479131</code></li>
-                    </ul>
+                <div class="test-form">
+                    <h4>🧪 Tester une requête</h4>
+                    <form method="POST" action="/test-api">
+                        <input type="text" name="item_id" placeholder="Item ID (ex: 166307831209)" required>
+                        <button type="submit">▶️ Exécuter le test</button>
+                    </form>
+                </div>
+                
+                <div class="quick-tests">
+                    <h4>🔧 Tests rapides</h4>
+                    <button class="test-btn" onclick="testItem('166307831209')">iPhone 13</button>
+                    <button class="test-btn" onclick="testItem('285090865961')">AirPods Pro</button>
+                    <button class="test-btn" onclick="testItem('385084963260')">Samsung Galaxy</button>
+                    <button class="test-btn" onclick="testSearch()">Recherche "iphone"</button>
+                    <button class="test-btn" onclick="testHealth()">Health Check</button>
                 </div>
             </div>
             
-            <!-- Results Section -->
-            <div class="results-card">
-                <h2><i class="fas fa-chart-bar"></i> Résultats</h2>
-                
-                {% if resultats %}
-                    {% if resultats.erreur %}
-                        <div class="error-box">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            <strong>Erreur :</strong> {{ resultats.erreur }}
-                        </div>
-                    {% else %}
-                        <!-- Product Display -->
-                        <div class="product-display">
-                            <div class="product-image">
-                                {% if resultats.images %}
-                                <img src="{{ resultats.images[0] }}" alt="Image produit" onerror="this.src='https://via.placeholder.com/300x300?text=Image+non+disponible'">
-                                {% else %}
-                                <div style="padding: 40px; color: #9ca3af;">
-                                    <i class="fas fa-image" style="font-size: 3rem;"></i>
-                                    <p>Image non disponible</p>
-                                </div>
-                                {% endif %}
-                            </div>
-                            
-                            <div class="product-info">
-                                <div class="success-badge">
-                                    <i class="fas fa-check-circle"></i> Données API eBay
-                                </div>
-                                
-                                <h3 style="color: #1f2937; margin-bottom: 10px;">{{ resultats.titre }}</h3>
-                                
-                                <div class="price-tag">
-                                    {{ resultats.prix.value }} {{ resultats.prix.currency }}
-                                </div>
-                                
-                                <div style="color: #6b7280; margin-bottom: 20px;">
-                                    <i class="fas fa-store"></i> {{ resultats.vendeur.nom }} 
-                                    {% if resultats.vendeur.score != 'N/A' %}
-                                    <span style="color: #059669; margin-left: 10px;">
-                                        <i class="fas fa-star"></i> {{ resultats.vendeur.score }}% positif
-                                    </span>
-                                    {% endif %}
-                                </div>
-                                
-                                <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                                    <div>
-                                        <div style="font-size: 0.9rem; color: #6b7280;">État</div>
-                                        <div style="font-weight: 600; color: #1f2937;">{{ resultats.etat }}</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 0.9rem; color: #6b7280;">Localisation</div>
-                                        <div style="font-weight: 600; color: #1f2937;">{{ resultats.localisation }}</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 0.9rem; color: #6b7280;">Quantité</div>
-                                        <div style="font-weight: 600; color: #1f2937;">{{ resultats.quantite_disponible }} disponible(s)</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Metrics -->
-                        <div class="metrics-grid">
-                            <div class="metric-card">
-                                <div class="metric-label">💰 Marge estimée</div>
-                                <div class="metric-value">{{ resultats.analyse.marge }}%</div>
-                            </div>
-                            <div class="metric-card">
-                                <div class="metric-label">📈 Score opportunité</div>
-                                <div class="metric-value">{{ resultats.analyse.score }}/100</div>
-                            </div>
-                            <div class="metric-card">
-                                <div class="metric-label">🚚 Livraison</div>
-                                <div class="metric-value">{{ resultats.livraison.type }}</div>
-                            </div>
-                            <div class="metric-card">
-                                <div class="metric-label">🔍 Vues 30 jours</div>
-                                <div class="metric-value">{{ resultats.statistiques.vues }}</div>
-                            </div>
-                        </div>
-                        
-                        <!-- Recommendations -->
-                        <div class="recommendations">
-                            <h3><i class="fas fa-lightbulb"></i> Recommandations Business</h3>
-                            
-                            {% for rec in resultats.recommandations %}
-                            <div class="rec-item">
-                                <div class="rec-title">{{ rec.titre }}</div>
-                                <div class="rec-desc">{{ rec.description }}</div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                        
-                        <!-- Debug Button -->
-                        {% if resultats.debug_data %}
-                        <button class="debug-btn" onclick="toggleDebug()">
-                            <i class="fas fa-code"></i> Afficher les données API brutes
-                        </button>
-                        
-                        <div class="raw-data" id="debugPanel">
-                            <pre id="debugContent">{{ resultats.debug_data }}</pre>
-                        </div>
-                        {% endif %}
-                        
-                    {% endif %}
-                {% else %}
-                    <!-- Empty State -->
-                    <div style="text-align: center; padding: 60px 20px; color: #9ca3af;">
-                        <i class="fas fa-chart-line" style="font-size: 4rem; margin-bottom: 20px;"></i>
-                        <h3>Prêt pour l'analyse</h3>
-                        <p>Entrez un Item ID ou URL eBay pour commencer l'analyse</p>
+            <!-- Panel 2: Logs en temps réel -->
+            <div class="panel">
+                <h3>📝 Logs en temps réel</h3>
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-value" id="requestCount">0</div>
+                        <div class="stat-label">Requêtes</div>
                     </div>
-                {% endif %}
+                    <div class="stat">
+                        <div class="stat-value" id="successCount">0</div>
+                        <div class="stat-label">Succès</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="errorCount">0</div>
+                        <div class="stat-label">Erreurs</div>
+                    </div>
+                </div>
+                <div class="logs" id="liveLogs">
+                    {% for log in logs %}
+                    <div class="log-entry">
+                        <span class="log-time">[{{ log.time }}]</span>
+                        <span class="log-level-{{ log.level }}">{{ log.level.upper() }}</span>
+                        <span>{{ log.message }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div style="margin-top: 10px;">
+                    <button class="toggle-btn" onclick="clearLogs()">🗑️ Effacer logs</button>
+                    <button class="toggle-btn" onclick="toggleAutoScroll()">⏸️ Auto-scroll</button>
+                </div>
             </div>
+        </div>
+        
+        <!-- Résultats du test -->
+        {% if test_result %}
+        <div class="panel response-section">
+            <h3>📦 Résultat du Test</h3>
+            <div style="margin-bottom: 15px;">
+                <button class="toggle-btn" onclick="toggleView('responsePretty')">Vue JSON</button>
+                <button class="toggle-btn" onclick="toggleView('responseRaw')">Vue Brute</button>
+                <button class="toggle-btn" onclick="toggleView('responseHeaders')">Headers</button>
+                <button class="toggle-btn" onclick="copyToClipboard()">📋 Copier JSON</button>
+            </div>
+            
+            <!-- Vue JSON formatée -->
+            <div id="responsePretty" class="response-box visible">
+                {{ test_result.pretty_json|safe }}
+            </div>
+            
+            <!-- Vue brute -->
+            <div id="responseRaw" class="response-box raw-data">
+                {{ test_result.raw_response }}
+            </div>
+            
+            <!-- Vue headers -->
+            <div id="responseHeaders" class="response-box raw-data">
+                {% for key, value in test_result.headers.items() %}
+                <strong>{{ key }}:</strong> {{ value }}<br>
+                {% endfor %}
+            </div>
+            
+            <!-- Statistiques -->
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">{{ test_result.status_code }}</div>
+                    <div class="stat-label">Status Code</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{{ test_result.response_time }}ms</div>
+                    <div class="stat-label">Temps réponse</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{{ test_result.response_size }}</div>
+                    <div class="stat-label">Taille (bytes)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{{ test_result.timestamp }}</div>
+                    <div class="stat-label">Timestamp</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Instructions -->
+        <div class="panel" style="margin-top: 20px; background: rgba(59, 130, 246, 0.1);">
+            <h3>📋 Comment lire les logs</h3>
+            <ul style="padding-left: 20px; margin-top: 10px;">
+                <li><span class="log-level-info">INFO</span>: Informations générales</li>
+                <li><span class="log-level-debug">DEBUG</span>: Détails techniques des requêtes</li>
+                <li><span class="log-level-error">ERROR</span>: Erreurs critiques</li>
+                <li>Vérifiez que le token commence par <code>v^1.1#</code></li>
+                <li>Status 200 = Succès, 401 = Token invalide, 404 = Item non trouvé</li>
+                <li>Les logs sont sauvegardés dans <code>ebay_debug.log</code></li>
+            </ul>
         </div>
     </div>
     
     <script>
-    // Gestion du formulaire
-    document.getElementById('analyseForm').addEventListener('submit', function(e) {
-        const btn = document.getElementById('submitBtn');
-        const loading = document.getElementById('loading');
-        
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connexion API...';
-        loading.style.display = 'block';
-    });
+    let requestCount = 0;
+    let successCount = 0;
+    let errorCount = 0;
+    let autoScroll = true;
     
-    // Toggle debug panel
-    function toggleDebug() {
-        const panel = document.getElementById('debugPanel');
-        if (panel.style.display === 'none' || panel.style.display === '') {
-            panel.style.display = 'block';
-        } else {
-            panel.style.display = 'none';
+    function testItem(itemId) {
+        document.querySelector('input[name="item_id"]').value = itemId;
+        document.querySelector('form').submit();
+    }
+    
+    function testSearch() {
+        fetch('/api/search/iphone')
+            .then(r => r.json())
+            .then(data => {
+                console.log('Search result:', data);
+                alert('Test de recherche effectué (voir console)');
+            });
+    }
+    
+    function testHealth() {
+        fetch('/health')
+            .then(r => r.json())
+            .then(data => {
+                console.log('Health check:', data);
+                alert('Health check OK (voir console)');
+            });
+    }
+    
+    function toggleView(viewId) {
+        // Masquer toutes les vues
+        document.querySelectorAll('.response-box').forEach(el => {
+            el.classList.remove('visible');
+            el.classList.add('raw-data');
+        });
+        
+        // Afficher la vue sélectionnée
+        const view = document.getElementById(viewId);
+        if (view) {
+            view.classList.remove('raw-data');
+            view.classList.add('visible');
         }
     }
     
-    // Auto-format URL
-    document.querySelector('.url-input').addEventListener('input', function(e) {
-        let value = e.target.value;
-        // Extraire l'Item ID de l'URL si nécessaire
-        if (value.includes('ebay.com/itm/')) {
-            const match = value.match(/itm\/(\d+)/);
-            if (match) {
-                e.target.value = match[1];  // Retirer le 'v' préfixe
-            }
-        }
-    });
+    function copyToClipboard() {
+        const jsonText = `{{ test_result.raw_response|tojson }}`;
+        navigator.clipboard.writeText(jsonText)
+            .then(() => alert('JSON copié dans le presse-papier!'))
+            .catch(err => console.error('Erreur copie:', err));
+    }
     
-    // Page load - restore debug panel state
-    window.addEventListener('load', function() {
-        const debugContent = document.getElementById('debugContent');
-        if (debugContent) {
-            try {
-                // Pretty print JSON
-                const data = JSON.parse(debugContent.textContent);
-                debugContent.textContent = JSON.stringify(data, null, 2);
-            } catch(e) {
-                console.log("Données debug non JSON");
+    function clearLogs() {
+        document.getElementById('liveLogs').innerHTML = '';
+    }
+    
+    function toggleAutoScroll() {
+        autoScroll = !autoScroll;
+        const btn = event.target;
+        btn.textContent = autoScroll ? '⏸️ Auto-scroll' : '▶️ Auto-scroll';
+    }
+    
+    // Simulation de logs en temps réel (pour démo)
+    function simulateLiveLogs() {
+        setInterval(() => {
+            if (Math.random() > 0.7) {
+                const logTypes = [
+                    {level: 'info', msg: 'Heartbeat - API monitoring active'},
+                    {level: 'debug', msg: 'Checking token expiration...'},
+                    {level: 'info', msg: 'Memory usage: 45MB'}
+                ];
+                const log = logTypes[Math.floor(Math.random() * logTypes.length)];
+                addLog(log.level, log.msg);
             }
+        }, 10000);
+    }
+    
+    function addLog(level, message) {
+        const logsDiv = document.getElementById('liveLogs');
+        const time = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
+        logEntry.innerHTML = `
+            <span class="log-time">[${time}]</span>
+            <span class="log-level-${level}">${level.toUpperCase()}</span>
+            <span>${message}</span>
+        `;
+        logsDiv.appendChild(logEntry);
+        
+        if (autoScroll) {
+            logsDiv.scrollTop = logsDiv.scrollHeight;
         }
-    });
+        
+        // Mettre à jour les compteurs
+        if (message.includes('Request to eBay API')) {
+            requestCount++;
+            document.getElementById('requestCount').textContent = requestCount;
+        }
+        if (message.includes('SUCCESS') || message.includes('200 OK')) {
+            successCount++;
+            document.getElementById('successCount').textContent = successCount;
+        }
+        if (message.includes('ERROR') || message.includes('failed')) {
+            errorCount++;
+            document.getElementById('errorCount').textContent = errorCount;
+        }
+    }
+    
+    // Démarrer la simulation
+    setTimeout(simulateLiveLogs, 1000);
     </script>
 </body>
 </html>
 '''
 
-# ========== CLIENT API EBAY ==========
+# Stockage des logs en mémoire (pour l'affichage web)
+web_logs = []
+MAX_LOGS = 100
 
-class EBayAPIClient:
-    """Client pour l'API eBay Officielle"""
+def add_web_log(level, message):
+    """Ajoute un log pour l'affichage web"""
+    web_logs.append({
+        'time': datetime.now().strftime('%H:%M:%S'),
+        'level': level,
+        'message': message
+    })
+    if len(web_logs) > MAX_LOGS:
+        web_logs.pop(0)
+
+class EBayAPIMonitor:
+    """Client API avec monitoring complet"""
     
-    def __init__(self, app_id, cert_id, access_token):
-        self.app_id = app_id
-        self.cert_id = cert_id
-        self.access_token = access_token
+    def __init__(self, token):
+        self.token = token
         self.base_url = "https://api.ebay.com/buy/browse/v1"
+        self.request_count = 0
+        self.success_count = 0
+        self.error_count = 0
         
-        print(f"✅ Client API eBay initialisé (App ID: {app_id[:10]}...)")
+        logger.info(f"🔧 Initialisation du monitor API eBay")
+        add_web_log('info', f'Monitor API initialisé - Token: {token[:30]}...')
     
-    def extract_item_id(self, input_str):
-        """Extrait l'Item ID depuis une URL ou un ID"""
-        # Nettoyer la chaîne
-        input_str = input_str.strip()
+    def test_connection(self):
+        """Test basique de connexion"""
+        headers = self._get_headers()
         
-        # Si c'est déjà un Item ID (format: v123456789012)
-        if input_str.startswith('v') and input_str[1:].isdigit():
-            return input_str[1:]  # Enlever le 'v'
-        
-        # Si c'est une URL eBay
-        if 'ebay.com/itm/' in input_str:
-            # Pattern plus robuste pour extraire l'ID
-            patterns = [
-                r'/itm/(\d+)',
-                r'/(\d+)\?',
-                r'/(\d+)$'
-            ]
-            for pattern in patterns:
-                match = re.search(pattern, input_str)
-                if match:
-                    return match.group(1)
-        
-        # Si c'est juste un numéro
-        if input_str.isdigit():
-            return input_str
-        
-        raise ValueError(f"Format non reconnu: {input_str}")
+        try:
+            start_time = time.time()
+            
+            # Test 1: Health endpoint
+            logger.debug("🔄 Test de connexion à l'API eBay...")
+            add_web_log('debug', 'Test de connexion à l'API eBay...')
+            
+            response = requests.get(
+                f"{self.base_url}/item_summary/search?q=test&limit=1",
+                headers=headers,
+                timeout=10
+            )
+            
+            elapsed = int((time.time() - start_time) * 1000)
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Connexion API réussie! Status: {response.status_code}, Temps: {elapsed}ms")
+                add_web_log('info', f'✅ Connexion API réussie! Status: {response.status_code}')
+                return True, response.status_code, elapsed
+            else:
+                logger.warning(f"⚠️  API répond mais avec erreur: {response.status_code}")
+                add_web_log('warning', f'API répond mais avec erreur: {response.status_code}')
+                return False, response.status_code, elapsed
+                
+        except Exception as e:
+            elapsed = int((time.time() - start_time) * 1000)
+            logger.error(f"❌ Erreur de connexion: {str(e)}")
+            add_web_log('error', f'Erreur de connexion: {str(e)}')
+            return False, 0, elapsed
     
-    def get_item(self, item_id):
-        """Récupère les détails d'un item via l'API"""
-        headers = {
-            'Authorization': f'Bearer {self.access_token}',
-            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_FR',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        }
+    def get_item_with_logging(self, item_id):
+        """Récupère un item avec logging complet"""
+        self.request_count += 1
+        start_time = time.time()
         
-        # CORRECTION: Endpoint correct pour l'API Browse v1
+        headers = self._get_headers()
         url = f"{self.base_url}/item/{item_id}"
         
-        print(f"📡 Appel API eBay pour l'item: {item_id}")
-        print(f"🔗 URL: {url}")
+        logger.debug(f"📤 Envoi requête #{self.request_count}")
+        logger.debug(f"   URL: {url}")
+        logger.debug(f"   Headers: Authorization: Bearer {self.token[:50]}...")
+        logger.debug(f"   Headers: X-EBAY-C-MARKETPLACE-ID: EBAY_FR")
+        
+        add_web_log('debug', f'📤 Requête #{self.request_count} vers: {url}')
+        add_web_log('debug', f'   Token: {self.token[:30]}...')
         
         try:
-            response = requests.get(url, headers=headers, timeout=30)
+            response = requests.get(url, headers=headers, timeout=15)
+            elapsed = int((time.time() - start_time) * 1000)
             
-            # Debug logging
-            print(f"📊 Status Code: {response.status_code}")
-            print(f"📊 Headers: {response.headers}")
+            # Log des headers reçus
+            logger.debug(f"📥 Réponse reçue en {elapsed}ms")
+            logger.debug(f"   Status: {response.status_code}")
+            logger.debug(f"   Content-Type: {response.headers.get('Content-Type')}")
+            logger.debug(f"   Content-Length: {response.headers.get('Content-Length', 'N/A')}")
             
-            if response.status_code != 200:
-                print(f"❌ Erreur API: {response.text}")
-                if response.status_code == 404:
-                    raise Exception(f"Item non trouvé: {item_id}")
-                elif response.status_code == 401:
-                    raise Exception("Token API invalide ou expiré. Vérifiez EBAY_ACCESS_TOKEN")
-                elif response.status_code == 403:
-                    raise Exception("Accès refusé - Vérifiez vos credentials API")
-                else:
-                    raise Exception(f"Erreur API eBay {response.status_code}: {response.text}")
+            add_web_log('debug', f'📥 Réponse #{self.request_count}: Status {response.status_code}, Temps: {elapsed}ms')
             
-            data = response.json()
-            print(f"✅ Réponse API reçue ({len(str(data))} caractères)")
-            return data
-            
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Erreur de connexion à l'API eBay: {str(e)}")
-    
-    def search_items(self, keywords, limit=5):
-        """Recherche des items par mots-clés"""
-        headers = {
-            'Authorization': f'Bearer {self.access_token}',
-            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_FR',
-            'Content-Type': 'application/json'
-        }
-        
-        params = {
-            'q': keywords,
-            'limit': str(limit),
-            'filter': 'buyingOptions:{FIXED_PRICE}'
-        }
-        
-        url = f"{self.base_url}/item_summary/search"
-        
-        try:
-            response = requests.get(url, headers=headers, params=params, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            print(f"❌ Erreur recherche: {str(e)}")
-            return None
-
-# ========== ANALYSEUR BUSINESS ==========
-
-class EBayBusinessAnalyzer:
-    """Analyseur business pour les données eBay"""
-    
-    def analyze_item_data(self, item_data):
-        """Analyse les données d'un item pour les opportunités business"""
-        
-        try:
-            # Informations de base (structure de réponse API eBay)
-            title = item_data.get('title', 'Non disponible')
-            price_data = item_data.get('price', {})
-            
-            # Prix
-            price_value = price_data.get('value', '0') if price_data else '0'
-            price_currency = price_data.get('currency', 'EUR') if price_data else 'EUR'
-            
-            # Calcul de rentabilité (exemple pour Crest 3D)
-            try:
-                prix_ebay = float(price_value)
+            if response.status_code == 200:
+                self.success_count += 1
+                logger.info(f"✅ SUCCESS: Item {item_id} trouvé ({elapsed}ms)")
+                add_web_log('info', f'✅ SUCCESS: Item {item_id} trouvé')
                 
-                # Coûts estimés
-                cout_produit = 8 * 0.85  # Pinduoduo 8$ → EUR
-                frais_ebay = prix_ebay * 0.10
-                frais_paypal = prix_ebay * 0.03
-                frais_livraison = 5.0
+                # Essayer de parser le JSON
+                try:
+                    data = response.json()
+                    logger.debug(f"   JSON parsé avec succès, {len(str(data))} caractères")
+                    return {
+                        'success': True,
+                        'data': data,
+                        'status_code': response.status_code,
+                        'headers': dict(response.headers),
+                        'response_time': elapsed,
+                        'response_size': len(response.content),
+                        'raw_response': response.text
+                    }
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ Erreur parsing JSON: {e}")
+                    add_web_log('error', f'Erreur parsing JSON: {e}')
+                    return {
+                        'success': False,
+                        'error': f"JSON invalide: {str(e)}",
+                        'status_code': response.status_code,
+                        'raw_response': response.text[:500]
+                    }
+                    
+            else:
+                self.error_count += 1
+                logger.warning(f"⚠️  ERREUR {response.status_code}: {response.text[:200]}")
+                add_web_log('warning', f'ERREUR {response.status_code}: {response.reason}')
                 
-                profit_net = prix_ebay - (cout_produit + frais_ebay + frais_paypal + frais_livraison)
-                marge = (profit_net / prix_ebay) * 100 if prix_ebay > 0 else 0
+                return {
+                    'success': False,
+                    'error': f"Erreur {response.status_code}: {response.reason}",
+                    'status_code': response.status_code,
+                    'raw_response': response.text[:500]
+                }
                 
-                # Score d'opportunité
-                score = self.calculate_opportunity_score(prix_ebay, marge, item_data)
-                
-            except Exception as e:
-                print(f"⚠️ Erreur calcul rentabilité: {e}")
-                profit_net = 0
-                marge = 0
-                score = 50
-            
-            # Récupérer les images
-            images = []
-            if 'image' in item_data:
-                images.append(item_data['image'].get('imageUrl', ''))
-            elif 'additionalImages' in item_data:
-                for img in item_data['additionalImages']:
-                    if img.get('imageUrl'):
-                        images.append(img['imageUrl'])
-            
-            # Vendeur info
-            seller = item_data.get('seller', {})
-            
-            # Formatage des résultats
-            resultats = {
-                'titre': title,
-                'prix': {
-                    'value': price_value,
-                    'currency': price_currency
-                },
-                'vendeur': {
-                    'nom': seller.get('username', 'Non disponible'),
-                    'score': seller.get('feedbackPercentage', 'N/A'),
-                    'score_absolu': seller.get('feedbackScore', 'N/A')
-                },
-                'etat': item_data.get('condition', 'Non spécifié'),
-                'localisation': item_data.get('itemLocation', {}).get('country', 'Non spécifié'),
-                'quantite_disponible': item_data.get('estimatedAvailabilities', [{}])[0].get('estimatedAvailableQuantity', 1),
-                'images': images,
-                'description': item_data.get('shortDescription', '')[:500] or item_data.get('description', '')[:500],
-                'livraison': {
-                    'type': 'Livraison standard',
-                    'cout': item_data.get('shippingOptions', [{}])[0].get('shippingCost', {}).get('value', '0') if item_data.get('shippingOptions') else '0'
-                },
-                'statistiques': {
-                    'vues': item_data.get('itemAffiliateWebUrl', 'N/A'),  # Pas directement disponible dans Browse API
-                    'suiveurs': 'N/A'
-                },
-                'analyse': {
-                    'profit_net': round(profit_net, 2),
-                    'marge': round(marge, 1),
-                    'score': score,
-                    'verdict': self.get_verdict(score)
-                },
-                'recommandations': self.generate_recommendations(title, marge, prix_ebay),
-                'debug_data': json.dumps(item_data, indent=2, ensure_ascii=False)  # Données brutes pour debug
+        except requests.exceptions.Timeout:
+            elapsed = int((time.time() - start_time) * 1000)
+            self.error_count += 1
+            logger.error(f"❌ TIMEOUT après {elapsed}ms")
+            add_web_log('error', f'TIMEOUT après {elapsed}ms')
+            return {
+                'success': False,
+                'error': f"Timeout après {elapsed}ms",
+                'status_code': 0,
+                'response_time': elapsed
             }
             
-            return resultats
-            
         except Exception as e:
-            print(f"❌ Erreur analyse: {str(e)}")
-            raise Exception(f"Erreur lors de l'analyse: {str(e)}")
+            elapsed = int((time.time() - start_time) * 1000)
+            self.error_count += 1
+            logger.error(f"❌ EXCEPTION: {str(e)}")
+            add_web_log('error', f'EXCEPTION: {str(e)}')
+            return {
+                'success': False,
+                'error': str(e),
+                'status_code': 0,
+                'response_time': elapsed
+            }
     
-    def calculate_opportunity_score(self, price, margin, item_data):
-        """Calcule un score d'opportunité sur 100"""
-        score = 0
-        
-        # Marge (40 points max)
-        if margin > 50:
-            score += 40
-        elif margin > 40:
-            score += 35
-        elif margin > 30:
-            score += 30
-        elif margin > 20:
-            score += 20
-        elif margin > 10:
-            score += 10
-        
-        # Prix (20 points max)
-        if 20 < price < 100:  # Segment idéal
-            score += 20
-        elif price > 100:
-            score += 15
-        elif price > 50:
-            score += 10
-        
-        # Vendeur (20 points max)
-        seller_feedback = item_data.get('seller', {}).get('feedbackPercentage', 0)
+    def _get_headers(self):
+        return {
+            'Authorization': f'Bearer {self.token}',
+            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_FR',
+            'Accept': 'application/json',
+            'User-Agent': 'EbayBusinessAnalyzer/1.0'
+        }
+
+# Initialisation
+api_monitor = None
+if EBAY_ACCESS_TOKEN:
+    try:
+        api_monitor = EBayAPIMonitor(EBAY_ACCESS_TOKEN)
+        logger.info("✅ Monitor API initialisé avec succès")
+    except Exception as e:
+        logger.error(f"❌ Erreur initialisation monitor: {e}")
+
+@app.route('/')
+def debug_dashboard():
+    """Dashboard de debug"""
+    return render_template_string(HTML_DEBUG,
+        app_id=EBAY_APP_ID,
+        cert_id=EBAY_CERT_ID,
+        token=EBAY_ACCESS_TOKEN,
+        logs=web_logs[-20:],  # 20 derniers logs
+        last_status=0,
+        test_result=None
+    )
+
+@app.route('/test-api', methods=['POST'])
+def test_api():
+    """Endpoint pour tester l'API"""
+    item_id = request.form.get('item_id', '').strip()
+    
+    if not item_id:
+        return render_template_string(HTML_DEBUG,
+            app_id=EBAY_APP_ID,
+            cert_id=EBAY_CERT_ID,
+            token=EBAY_ACCESS_TOKEN,
+            logs=web_logs[-20:],
+            last_status=0,
+            test_result=None
+        )
+    
+    if not api_monitor:
+        add_web_log('error', 'Monitor API non initialisé - Token manquant?')
+        return render_template_string(HTML_DEBUG,
+            app_id=EBAY_APP_ID,
+            cert_id=EBAY_CERT_ID,
+            token=EBAY_ACCESS_TOKEN,
+            logs=web_logs[-20:],
+            last_status=0,
+            test_result={
+                'error': 'API Monitor non initialisé. Vérifiez EBAY_ACCESS_TOKEN.',
+                'status_code': 0
+            }
+        )
+    
+    # Exécuter le test
+    result = api_monitor.get_item_with_logging(item_id)
+    
+    # Formater le JSON pour l'affichage
+    pretty_json = ''
+    if result.get('success') and 'data' in result:
         try:
-            feedback = float(str(seller_feedback).replace('%', ''))
-            if feedback > 98:
-                score += 20
-            elif feedback > 95:
-                score += 15
-            elif feedback > 90:
-                score += 10
+            pretty_json = json.dumps(result['data'], indent=2, ensure_ascii=False)
         except:
-            pass
-        
-        # Popularité (20 points max) - estimé basé sur le prix
-        if price < 50:
-            score += 15  # Prix bas = plus populaire
-        elif price < 100:
-            score += 10
-        
-        return min(100, score)
+            pretty_json = "Impossible de formater le JSON"
     
-    def get_verdict(self, score):
-        if score >= 80:
-            return "🎯 EXCELLENTE OPPORTUNITÉ"
-        elif score >= 65:
-            return "✅ BONNE OPPORTUNITÉ"
-        elif score >= 50:
-            return "⚠️ OPPORTUNITÉ MOYENNE"
-        else:
-            return "❌ NON RECOMMANDÉ"
-    
-    def generate_recommendations(self, titre, margin, price):
-        """Génère des recommandations business"""
-        recommendations = []
-        titre_lower = titre.lower()
-        
-        # Recommandation prix
-        if margin > 40:
-            recommendations.append({
-                'titre': '💰 Stratégie Premium',
-                'description': f'Conserver prix à {price:.2f}€ (marge {margin:.1f}%)'
-            })
-        elif margin > 25:
-            prix_suggere = price * 0.9
-            recommendations.append({
-                'titre': '💰 Stratégie Compétitive',
-                'description': f'Réduire à {prix_suggere:.2f}€ pour gagner en volume'
-            })
-        else:
-            recommendations.append({
-                'titre': '💰 Stratégie Agressive',
-                'description': f'Prix bas ({price*0.8:.2f}€) pour pénétration marché'
-            })
-        
-        # Recommandations spécifiques par catégorie
-        if any(kw in titre_lower for kw in ['crest', 'whitening', 'blanchiment', 'teeth', 'dent']):
-            recommendations.append({
-                'titre': '🦷 Spécialisation Dentaire',
-                'description': 'Focus sur niche blanchiment dentaire (demande stable)'
-            })
-            recommendations.append({
-                'titre': '📢 Marketing Ciblé',
-                'description': 'Google Ads sur "blanchiment dentaire" (5000 recherches/mois)'
-            })
-        elif any(kw in titre_lower for kw in ['watch', 'montre', 'clock']):
-            recommendations.append({
-                'titre': '⌚ Segment Luxe/Entrée Gamme',
-                'description': 'Cibler les montres intelligentes ou vintage'
-            })
-        elif any(kw in titre_lower for kw in ['camera', 'appareil', 'photo']):
-            recommendations.append({
-                'titre': '📷 Accessoires Premium',
-                'description': 'Vendre avec accessoires (piles, cartes mémoire)'
-            })
-        
-        # Recommandations générales
-        recommendations.append({
-            'titre': '📦 Packaging Premium',
-            'description': 'Emballage français avec notice professionnelle'
-        })
-        
-        recommendations.append({
-            'titre': '🚚 Livraison Rapide',
-            'description': 'Offrir suivi sous 3-7 jours (vs 20 jours concurrent)'
-        })
-        
-        recommendations.append({
-            'titre': '📊 Analyse Concurrentielle',
-            'description': 'Surveiller prix concurrents et ajuster stratégie'
-        })
-        
-        return recommendations
+    return render_template_string(HTML_DEBUG,
+        app_id=EBAY_APP_ID,
+        cert_id=EBAY_CERT_ID,
+        token=EBAY_ACCESS_TOKEN,
+        logs=web_logs[-20:],
+        last_status=result.get('status_code', 0),
+        test_result={
+            'status_code': result.get('status_code', 0),
+            'success': result.get('success', False),
+            'response_time': result.get('response_time', 0),
+            'response_size': result.get('response_size', 0),
+            'headers': result.get('headers', {}),
+            'pretty_json': pretty_json,
+            'raw_response': result.get('raw_response', ''),
+            'timestamp': datetime.now().strftime('%H:%M:%S')
+        } if result else None
+    )
 
-# ========== INITIALISATION ==========
-api_configured = bool(EBAY_APP_ID and EBAY_CERT_ID and EBAY_ACCESS_TOKEN)
-
-if api_configured:
-    try:
-        ebay_client = EBayAPIClient(EBAY_APP_ID, EBAY_CERT_ID, EBAY_ACCESS_TOKEN)
-        business_analyzer = EBayBusinessAnalyzer()
-        print("✅ Analyseur business initialisé")
-    except Exception as e:
-        print(f"❌ Erreur initialisation: {e}")
-        api_configured = False
-        ebay_client = None
-        business_analyzer = None
-else:
-    print("⚠️ API eBay non configurée. Configurez les variables d'environnement.")
-    ebay_client = None
-    business_analyzer = None
-
-# ========== ROUTES ==========
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    """Page principale"""
-    if request.method == 'POST':
-        url_or_id = request.form.get('url', '').strip()
-        
-        if not url_or_id:
-            return render_template_string(HTML, 
-                resultats={'erreur': 'Veuillez entrer un Item ID ou URL'},
-                api_configured=api_configured)
-        
-        if not api_configured or not ebay_client:
-            return render_template_string(HTML,
-                resultats={'erreur': 'API eBay non configurée. Configurez EBAY_APP_ID, EBAY_CERT_ID et EBAY_ACCESS_TOKEN.'},
-                api_configured=api_configured)
-        
-        try:
-            # 1. Extraire l'Item ID
-            item_id = ebay_client.extract_item_id(url_or_id)
-            print(f"🔍 Item ID extrait: {item_id}")
-            
-            # 2. Récupérer les données via l'API
-            item_data = ebay_client.get_item(item_id)
-            
-            # 3. Analyser pour les opportunités business
-            resultats = business_analyzer.analyze_item_data(item_data)
-            
-            return render_template_string(HTML, resultats=resultats, api_configured=api_configured)
-            
-        except Exception as e:
-            error_msg = str(e)
-            print(f"❌ Erreur: {error_msg}")
-            return render_template_string(HTML,
-                resultats={'erreur': error_msg},
-                api_configured=api_configured)
-    
-    return render_template_string(HTML, resultats=None, api_configured=api_configured)
-
-@app.route('/api/search/<keywords>')
-def search_items(keywords):
-    """Recherche d'items par mots-clés"""
-    if not api_configured:
-        return jsonify({'error': 'API non configurée'}), 400
-    
-    try:
-        results = ebay_client.search_items(keywords, limit=10)
-        return jsonify(results)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/health')
-def health():
-    """Health check"""
+@app.route('/api/logs')
+def get_logs():
+    """API pour récupérer les logs (pour monitoring externe)"""
     return jsonify({
-        'status': 'healthy' if api_configured else 'api_missing',
-        'api_configured': api_configured,
-        'ebay_app_id': f"{EBAY_APP_ID[:5]}..." if EBAY_APP_ID else 'missing',
+        'logs': web_logs[-50:],
+        'stats': {
+            'total_requests': api_monitor.request_count if api_monitor else 0,
+            'success': api_monitor.success_count if api_monitor else 0,
+            'errors': api_monitor.error_count if api_monitor else 0
+        },
         'timestamp': datetime.now().isoformat()
     })
 
-@app.route('/test/<item_id>')
-def test_item(item_id):
-    """Endpoint de test direct"""
-    if not api_configured:
-        return jsonify({'error': 'API non configurée'}), 400
-    
-    try:
-        item_data = ebay_client.get_item(item_id)
+@app.route('/api/test-connection')
+def test_connection():
+    """Test simple de connexion"""
+    if not api_monitor:
         return jsonify({
-            'success': True,
-            'item_id': item_id,
-            'title': item_data.get('title', 'No title'),
-            'price': item_data.get('price', {}),
-            'status': 'ok'
+            'success': False,
+            'error': 'API non initialisée',
+            'token_present': bool(EBAY_ACCESS_TOKEN)
         })
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'item_id': item_id,
-            'status': 'error'
-        }), 500
+    
+    success, status, elapsed = api_monitor.test_connection()
+    
+    return jsonify({
+        'success': success,
+        'status_code': status,
+        'response_time_ms': elapsed,
+        'timestamp': datetime.now().isoformat(),
+        'token_info': {
+            'present': bool(EBAY_ACCESS_TOKEN),
+            'length': len(EBAY_ACCESS_TOKEN) if EBAY_ACCESS_TOKEN else 0,
+            'starts_with': EBAY_ACCESS_TOKEN[:20] + '...' if EBAY_ACCESS_TOKEN else None
+        }
+    })
+
+@app.route('/api/simple-test/<item_id>')
+def simple_test_api(item_id):
+    """Test API simple pour curl/wget"""
+    if not api_monitor:
+        return jsonify({'error': 'API non configurée'}), 500
+    
+    result = api_monitor.get_item_with_logging(item_id)
+    return jsonify(result)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    print("="*60)
-    print("🚀 ANALYSEUR EBAY PRO - API OFFICIELLE")
-    print("="*60)
-    print(f"📡 Port: {port}")
-    print(f"🔑 API eBay: {'✓ CONFIGURÉE' if api_configured else '✗ NON CONFIGURÉE'}")
+    logger.info(f"🚀 Démarrage sur le port {port}")
+    logger.info(f"📊 Dashboard de debug disponible sur http://localhost:{port}")
+    logger.info(f"🔧 Test API sur http://localhost:{port}/api/test-connection")
     
-    if not api_configured:
-        print("⚠️  Configurez les variables d'environnement:")
-        print("   - EBAY_APP_ID")
-        print("   - EBAY_CERT_ID") 
-        print("   - EBAY_ACCESS_TOKEN")
-        print("\n📚 Documentation: https://developer.ebay.com/api-docs/buy/browse/overview.html")
-        print("💡 Pour obtenir un token: https://developer.ebay.com/api-docs/static/oauth-tokens.html")
+    # Test automatique au démarrage
+    if api_monitor:
+        logger.info("🔍 Test automatique de connexion au démarrage...")
+        success, status, elapsed = api_monitor.test_connection()
+        if success:
+            logger.info(f"✅ L'application est prête! Connexion eBay OK ({elapsed}ms)")
+        else:
+            logger.warning(f"⚠️  Problème de connexion détecté (Status: {status})")
     
-    print("="*60)
-    print("🌐 Démarrage de l'application...")
-    app.run(host='0.0.0.0', port=port, debug=True)  # debug=True pour les erreurs détaillées
+    app.run(host='0.0.0.0', port=port, debug=True)
