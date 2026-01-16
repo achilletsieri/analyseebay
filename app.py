@@ -1,386 +1,325 @@
-# app.py - VERSION CORRIGÉE SANS ERREUR SYNTAXE
-from flask import Flask, request, render_template_string, jsonify
+# app.py - VERSION DEBUG DONNÉES BRUTES
+from flask import Flask, request, render_template_string
 import requests
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime
 import time
-import random
-import os
+import json
 
 app = Flask(__name__)
 
-# HTML SIMPLE POUR COMMENCER
-HTML_SIMPLE = '''
+HTML_DEBUG = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>🚀 Analyseur d'Opportunités eBay</title>
+    <title>🔍 DEBUG - Données brutes eBay</title>
     <style>
-        body { font-family: Arial; padding: 20px; background: #f0f2f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; }
-        h1 { color: #2c3e50; text-align: center; }
-        input { width: 100%; padding: 15px; margin: 15px 0; border: 2px solid #ddd; border-radius: 8px; }
-        button { background: #27ae60; color: white; padding: 16px; border: none; border-radius: 8px; width: 100%; font-size: 18px; }
-        .result { margin-top: 30px; padding: 25px; background: #f8f9fa; border-radius: 10px; }
-        .error { color: #e74c3c; background: #ffeaea; padding: 20px; border-radius: 8px; }
-        .success { color: #27ae60; background: #e8f6f3; padding: 20px; border-radius: 8px; }
-        .info { padding: 15px; margin: 10px 0; background: white; border-radius: 6px; }
+        body { font-family: monospace; padding: 20px; background: #0d1117; color: #c9d1d9; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #58a6ff; }
+        .section { background: #161b22; padding: 20px; margin: 20px 0; border-radius: 6px; border: 1px solid #30363d; }
+        .label { color: #8b949e; font-size: 0.9em; margin-bottom: 5px; }
+        .value { color: #c9d1d9; font-size: 1.1em; margin-bottom: 15px; }
+        .raw-html { background: #000; padding: 20px; border-radius: 6px; overflow: auto; max-height: 500px; font-size: 12px; }
+        .data-item { margin: 10px 0; padding: 10px; background: #21262d; border-radius: 4px; }
+        .success { color: #3fb950; }
+        .error { color: #f85149; }
+        .warning { color: #d29922; }
+        pre { margin: 0; white-space: pre-wrap; }
+        .btn { background: #238636; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; }
+        .btn:hover { background: #2ea043; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚀 Analyseur d'Opportunités eBay</h1>
-        <p style="text-align: center; color: #7f8c8d;">Analyse business complète des produits eBay</p>
+        <h1>🔍 DEBUG - Données brutes depuis eBay</h1>
         
         <form method="POST" action="/">
-            <input type="text" 
-                   name="url" 
-                   placeholder="https://www.ebay.com/itm/..."
+            <input type="text" name="url" placeholder="URL eBay" 
                    value="https://www.ebay.com/itm/403946674538"
-                   required>
-            <button type="submit">🚀 Analyser l'opportunité business</button>
+                   style="width: 100%; padding: 10px; margin: 10px 0; background: #0d1117; color: white; border: 1px solid #30363d;">
+            <button type="submit" class="btn">🔬 Analyser et Afficher Données Brutes</button>
         </form>
         
-        {% if resultats %}
-        <div class="result">
-            <h2>📊 Résultats de l'analyse</h2>
-            
-            {% if resultats.erreur %}
-                <div class="error">
-                    <p><strong>❌ Erreur :</strong> {{ resultats.erreur }}</p>
+        {% if debug_data %}
+        <div class="section">
+            <h2>📊 STATS DE LA REQUÊTE</h2>
+            <div class="data-item">
+                <div class="label">URL analysée</div>
+                <div class="value">{{ debug_data.url }}</div>
+            </div>
+            <div class="data-item">
+                <div class="label">Statut HTTP</div>
+                <div class="value {% if debug_data.status == 200 %}success{% else %}error{% endif %}">
+                    {{ debug_data.status }}
                 </div>
-            {% else %}
-                <div class="success">
-                    <p>✅ Analyse business réussie !</p>
+            </div>
+            <div class="data-item">
+                <div class="label">Taille de la page</div>
+                <div class="value">{{ debug_data.page_size }} caractères</div>
+            </div>
+            <div class="data-item">
+                <div class="label">Temps de chargement</div>
+                <div class="value">{{ debug_data.load_time }} secondes</div>
+            </div>
+            <div class="data-item">
+                <div class="label">Encodage détecté</div>
+                <div class="value">{{ debug_data.encoding }}</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🏷️ BALISES HTML EXTRACTIVES</h2>
+            {% for tag, content in debug_data.html_tags.items() %}
+            <div class="data-item">
+                <div class="label">&lt;{{ tag }}&gt;</div>
+                <div class="value">{{ content[:200] }}{% if content|length > 200 %}...{% endif %}</div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="section">
+            <h2>💰 RECHERCHES DE PRIX (REGEX)</h2>
+            {% for pattern, matches in debug_data.price_patterns.items() %}
+            <div class="data-item">
+                <div class="label">Pattern: {{ pattern[:50] }}{% if pattern|length > 50 %}...{% endif %}</div>
+                <div class="value">
+                    {% if matches %}
+                        Trouvé: {{ matches|join(', ') }}
+                    {% else %}
+                        <span class="error">Non trouvé</span>
+                    {% endif %}
                 </div>
-                
-                <!-- Titre traduit -->
-                {% if resultats.titre_traduit %}
-                <div class="info" style="border-left: 4px solid #3498db;">
-                    <strong>🇫🇷 Titre optimisé pour eBay France :</strong><br>
-                    {{ resultats.titre_traduit }}
-                </div>
-                {% endif %}
-                
-                <!-- Analyse de rentabilité -->
-                {% if resultats.rentabilite %}
-                <div class="info" style="border-left: 4px solid #2ecc71;">
-                    <strong>💰 Analyse de rentabilité :</strong><br>
-                    Prix eBay: {{ resultats.rentabilite.prix_ebay }}€<br>
-                    Coût estimé: {{ resultats.rentabilite.cout_produit }}€<br>
-                    Marge: {{ resultats.rentabilite.marge_pourcentage }}%<br>
-                    Profit net: {{ resultats.rentabilite.profit_net }}€
-                </div>
-                {% endif %}
-                
-                <!-- Recommandations -->
-                {% if resultats.recommandations %}
-                <div class="info" style="border-left: 4px solid #f39c12;">
-                    <strong>🎯 Recommandations business :</strong><br>
-                    {% for rec in resultats.recommandations %}
-                    • {{ rec }}<br>
-                    {% endfor %}
-                </div>
-                {% endif %}
-                
-                <!-- Score d'opportunité -->
-                {% if resultats.score_opportunite %}
-                <div class="info" style="border-left: 4px solid #9b59b6; text-align: center;">
-                    <strong>📈 Score d'opportunité :</strong><br>
-                    <div style="font-size: 2.5em; font-weight: bold; margin: 10px 0;">
-                        {{ resultats.score_opportunite }}/100
-                    </div>
-                    <div style="color: #7f8c8d;">
-                        {{ resultats.verdict }}
-                    </div>
-                </div>
-                {% endif %}
-                
-                <!-- Informations produit -->
-                {% if resultats.produit %}
-                <div class="info" style="border-left: 4px solid #1abc9c;">
-                    <strong>📦 Informations produit :</strong><br>
-                    Titre original: {{ resultats.produit.titre_original }}<br>
-                    Prix: {{ resultats.produit.prix }}<br>
-                    Vendeur: {{ resultats.produit.vendeur }}<br>
-                    Livraison: {{ resultats.produit.livraison }}
-                </div>
-                {% endif %}
-                
-                <div style="text-align: center; margin-top: 25px;">
-                    <a href="/" style="background: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
-                        🔄 Nouvelle analyse
-                    </a>
-                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="section">
+            <h2>📝 TEXTE COMPLET DE LA PAGE (extrait)</h2>
+            <div class="raw-html">
+                <pre>{{ debug_data.text_sample }}</pre>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔗 URLS TROUVÉES DANS LA PAGE</h2>
+            {% for url in debug_data.found_urls[:10] %}
+            <div class="data-item">
+                <div class="value">{{ url }}</div>
+            </div>
+            {% endfor %}
+            {% if debug_data.found_urls|length > 10 %}
+            <div class="warning">... et {{ debug_data.found_urls|length - 10 }} autres URLs</div>
             {% endif %}
         </div>
+        
+        <div class="section">
+            <h2>🎯 EXTRACTION AVEC BEAUTIFULSOUP</h2>
+            <div class="data-item">
+                <div class="label">Titre (h1)</div>
+                <div class="value">{{ debug_data.bs4.title }}</div>
+            </div>
+            <div class="data-item">
+                <div class="label">Meta description</div>
+                <div class="value">{{ debug_data.bs4.meta_description }}</div>
+            </div>
+            <div class="data-item">
+                <div class="label">Tous les h1 trouvés</div>
+                <div class="value">
+                    {% for h1 in debug_data.bs4.all_h1 %}
+                    • {{ h1 }}<br>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="data-item">
+                <div class="label">Classes contenant "price"</div>
+                <div class="value">
+                    {% for cls in debug_data.bs4.price_classes %}
+                    <span style="background: #1f6feb; padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 0.9em;">{{ cls }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📦 DONNÉES STRUCTURÉES (JSON-LD)</h2>
+            {% if debug_data.json_ld %}
+            <div class="raw-html">
+                <pre>{{ debug_data.json_ld|tojson(indent=2) }}</pre>
+            </div>
+            {% else %}
+            <div class="error">Aucune donnée JSON-LD trouvée</div>
+            {% endif %}
+        </div>
+        
+        <div class="section">
+            <h2>🎪 INFORMATIONS VENDEUR</h2>
+            {% for key, value in debug_data.seller_info.items() %}
+            <div class="data-item">
+                <div class="label">{{ key }}</div>
+                <div class="value">{{ value }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        
         {% endif %}
     </div>
 </body>
 </html>
 '''
 
-class BusinessAnalyzer:
-    """Analyseur business simplifié"""
+def fetch_ebay_data_debug(url):
+    """Récupère toutes les données brutes d'une page eBay"""
+    start_time = time.time()
     
-    def __init__(self):
-        print("✅ Analyseur business initialisé")
+    debug_info = {
+        'url': url,
+        'status': 0,
+        'page_size': 0,
+        'load_time': 0,
+        'encoding': 'unknown',
+        'html_tags': {},
+        'price_patterns': {},
+        'text_sample': '',
+        'found_urls': [],
+        'bs4': {},
+        'json_ld': None,
+        'seller_info': {}
+    }
     
-    def translate_title_fr(self, title):
-        """Traduit et optimise le titre pour le marché français"""
-        if not title or title == "Non trouvé":
-            return "Titre non disponible"
-        
-        # Traduction simplifiée (sans API externe pour l'instant)
-        translations = {
-            'teeth whitening': 'blanchiment de dents',
-            'whitening kit': 'kit blanchiment',
-            'dental whitening': 'blanchiment dentaire',
-            'white strips': 'bandes blanchissantes',
-            'professional': 'professionnel',
-            'advanced': 'avancé',
-            'set': 'lot',
-            'pack': 'pack'
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
         }
         
-        translated = title.lower()
-        for eng, fr in translations.items():
-            translated = translated.replace(eng, fr)
+        print(f"🌐 Début analyse DEBUG pour: {url}")
         
-        # Formater pour eBay France
-        if 'blanchiment' in translated and 'dents' in translated:
-            if 'crest' in translated or '3d' in translated:
-                return "KIT BLANCHIMENT DE DENTS (CREST 3D WHITE) - PROFESSIONNEL - BOUTIQUE SPÉCIALISÉE"
-            else:
-                return "KIT BLANCHIMENT DE DENTS PROFESSIONNEL - RÉSULTATS RAPIDES - QUALITÉ GARANTIE"
+        # 1. Faire la requête
+        response = requests.get(url, headers=headers, timeout=30)
+        debug_info['status'] = response.status_code
+        debug_info['encoding'] = response.encoding
+        debug_info['page_size'] = len(response.text)
         
-        # Capitaliser la première lettre de chaque mot
-        return translated.title()
-    
-    def calculate_profitability(self, ebay_price_str, pinduoduo_price=8, quantity=25):
-        """Calcule la rentabilité estimée"""
-        try:
-            # Nettoyer le prix
-            ebay_price = float(ebay_price_str.replace(',', '.')) if ebay_price_str else 0
-            
-            # Conversion USD to EUR
-            pinduoduo_eur = pinduoduo_price * 0.85
-            
-            # Coûts estimés
-            frais_ebay = ebay_price * 0.10  # 10% frais eBay
-            frais_paypal = ebay_price * 0.03  # 3% frais Paypal
-            frais_livraison = 5.0  # €
-            cout_emballage = 1.0  # €
-            
-            # Calcul
-            cout_total = (pinduoduo_eur * quantity) + frais_livraison + cout_emballage
-            revenu_net = ebay_price - (cout_total + frais_ebay + frais_paypal)
-            marge_pourcentage = (revenu_net / ebay_price) * 100 if ebay_price > 0 else 0
-            
-            return {
-                'prix_ebay': round(ebay_price, 2),
-                'cout_produit': round(pinduoduo_eur * quantity, 2),
-                'frais_total': round(frais_ebay + frais_paypal + frais_livraison + cout_emballage, 2),
-                'profit_net': round(revenu_net, 2),
-                'marge_pourcentage': round(marge_pourcentage, 1)
-            }
-        except:
-            return {
-                'prix_ebay': 0,
-                'cout_produit': 0,
-                'frais_total': 0,
-                'profit_net': 0,
-                'marge_pourcentage': 0
-            }
-    
-    def generate_recommendations(self, product_data, profitability):
-        """Génère des recommandations business"""
-        recommendations = []
+        # 2. Calculer le temps
+        debug_info['load_time'] = round(time.time() - start_time, 2)
         
-        # Recommandations basées sur la marge
-        if profitability['marge_pourcentage'] > 40:
-            recommendations.append("💰 Stratégie Premium: Garder prix élevé (marge > 40%)")
-            recommendations.append(f"🎯 Prix recommandé: {product_data.get('prix', 0)}€")
-        elif profitability['marge_pourcentage'] > 20:
-            recommendations.append("💰 Stratégie Compétitive: Légère réduction pour gagner en volume")
+        if response.status_code != 200:
+            return debug_info
+        
+        # 3. Extraire les balises HTML importantes
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Balises spécifiques
+        debug_info['html_tags'] = {
+            'title': soup.title.string if soup.title else 'Non trouvé',
+            'h1': soup.find('h1').get_text(strip=True) if soup.find('h1') else 'Non trouvé',
+            'meta[name="description"]': soup.find('meta', {'name': 'description'})['content'] if soup.find('meta', {'name': 'description'}) else 'Non trouvé',
+            'meta[property="og:title"]': soup.find('meta', {'property': 'og:title'})['content'] if soup.find('meta', {'property': 'og:title'}) else 'Non trouvé',
+            'meta[property="og:price:amount"]': soup.find('meta', {'property': 'og:price:amount'})['content'] if soup.find('meta', {'property': 'og:price:amount'}) else 'Non trouvé',
+        }
+        
+        # 4. Chercher les prix avec différents patterns
+        html_text = response.text
+        debug_info['text_sample'] = html_text[:2000]  # Premier 2000 caractères
+        
+        price_patterns = {
+            'Pattern 1 (price: "xx.xx")': re.findall(r'"price"\s*:\s*"([\d\.,]+)"', html_text),
+            'Pattern 2 (currentPrice)': re.findall(r'"currentPrice"\s*:\s*\{[^}]*"value"\s*:\s*"([\d\.,]+)"', html_text),
+            'Pattern 3 (itemprop="price")': re.findall(r'itemprop="price"[^>]*content="([^"]+)"', html_text),
+            'Pattern 4 (data-price)': re.findall(r'data-price=["\']([\d\.,]+)["\']', html_text),
+            'Pattern 5 (€ dans texte)': re.findall(r'([\d\.,]+)\s*€', html_text),
+            'Pattern 6 ($ dans texte)': re.findall(r'\$([\d\.,]+)', html_text),
+            'Pattern 7 (convertedPrice)': re.findall(r'"convertedPrice"\s*:\s*\{[^}]*"value"\s*:\s*"([\d\.,]+)"', html_text),
+        }
+        
+        debug_info['price_patterns'] = price_patterns
+        
+        # 5. Extraire toutes les URLs
+        url_pattern = r'https?://[^\s"\'<>]+'
+        debug_info['found_urls'] = list(set(re.findall(url_pattern, html_text)))
+        
+        # 6. BeautifulSoup extraction détaillée
+        debug_info['bs4'] = {
+            'title': soup.title.string if soup.title else 'Non trouvé',
+            'meta_description': soup.find('meta', {'name': 'description'})['content'] if soup.find('meta', {'name': 'description'}) else 'Non trouvé',
+            'all_h1': [h1.get_text(strip=True) for h1 in soup.find_all('h1')],
+            'all_h2': [h2.get_text(strip=True) for h2 in soup.find_all('h2')][:5],
+            'price_classes': list(set([elem.get('class')[0] for elem in soup.find_all(class_=re.compile('price', re.I)) if elem.get('class')]))[:10],
+            'all_meta': {meta.get('name', meta.get('property', 'unknown')): meta.get('content') 
+                        for meta in soup.find_all('meta') 
+                        if meta.get('content') and len(meta.get('content', '')) < 100}  # Filtrer les longs contenus
+        }
+        
+        # 7. Chercher JSON-LD (données structurées)
+        json_ld_scripts = soup.find_all('script', {'type': 'application/ld+json'})
+        if json_ld_scripts:
             try:
-                prix_actuel = float(product_data.get('prix', '0').replace(',', '.'))
-                prix_rec = prix_actuel * 0.9
-                recommendations.append(f"🎯 Prix recommandé: {prix_rec:.2f}€ (-10%)")
+                debug_info['json_ld'] = json.loads(json_ld_scripts[0].string)
             except:
-                recommendations.append("🎯 Prix: Analyse à affiner")
-        else:
-            recommendations.append("💰 Stratégie Agressive: Prix bas pour volume élevé")
+                debug_info['json_ld'] = "JSON invalide"
         
-        # Recommandations spécifiques pour Crest 3D
-        if 'crest' in product_data.get('titre_original', '').lower() or '3d' in product_data.get('titre_original', '').lower():
-            recommendations.append("📈 Marketing: Google Ads sur 'Crest 3D' (5000 recherches/mois)")
-            recommendations.append("📦 Quantité: Lot de 25-30 sachets pour 50-60€")
-            recommendations.append("🚚 Livraison: Offrir suivi + assurance (vs 20 jours concurrent)")
-            recommendations.append("🏪 Différenciation: Packaging premium français")
+        # 8. Informations vendeur
+        seller_patterns = {
+            'seller_name': re.findall(r'"sellerName"\s*:\s*"([^"]+)"', html_text),
+            'seller_feedback': re.findall(r'"feedbackScore"\s*:\s*(\d+)', html_text),
+            'seller_positive_feedback': re.findall(r'"positiveFeedbackPercent"\s*:\s*([\d\.,]+)', html_text),
+            'seller_location': re.findall(r'"location"\s*:\s*"([^"]+)"', html_text),
+        }
         
-        return recommendations
+        debug_info['seller_info'] = {k: v[0] if v else 'Non trouvé' for k, v in seller_patterns.items()}
+        
+        # 9. Structure HTML complète (pour comprendre la hiérarchie)
+        debug_info['html_structure'] = {
+            'div_count': len(soup.find_all('div')),
+            'span_count': len(soup.find_all('span')),
+            'class_with_product': [div.get('class') for div in soup.find_all('div', class_=re.compile('product', re.I))][:5],
+            'id_with_price': [elem.get('id') for elem in soup.find_all(id=re.compile('price', re.I))][:5]
+        }
+        
+        print(f"✅ DEBUG complet terminé en {debug_info['load_time']}s")
+        print(f"📏 Taille page: {debug_info['page_size']} caractères")
+        print(f"🏷️ Titre trouvé: {debug_info['html_tags'].get('h1', 'Non trouvé')}")
+        
+        # Afficher tous les prix trouvés
+        print("💰 Prix trouvés:")
+        for pattern, matches in price_patterns.items():
+            if matches:
+                print(f"  {pattern}: {matches[:3]}")  # Afficher les 3 premiers
+        
+    except Exception as e:
+        debug_info['error'] = str(e)
+        print(f"❌ Erreur DEBUG: {e}")
     
-    def calculate_opportunity_score(self, profitability, product_data):
-        """Calcule un score d'opportunité sur 100"""
-        score = 0
-        
-        # Profitabilité (40 points max)
-        marge = profitability['marge_pourcentage']
-        if marge > 40:
-            score += 40
-        elif marge > 30:
-            score += 30
-        elif marge > 20:
-            score += 20
-        elif marge > 10:
-            score += 10
-        
-        # Type de produit (30 points max)
-        titre = product_data.get('titre_original', '').lower()
-        if 'crest' in titre or 'whitening' in titre or 'blanchiment' in titre:
-            score += 25  # Produit tendance
-        
-        # Concurrence (20 points max)
-        # Pour Crest 3D: concurrent à 69€ avec livraison 20 jours = opportunité
-        score += 15
-        
-        # Livraison (10 points max)
-        score += 8  # Peut offrir livraison plus rapide
-        
-        return min(100, score)
-    
-    def get_verdict(self, score):
-        """Retourne un verdict basé sur le score"""
-        if score >= 80:
-            return "🎯 EXCELLENTE OPPORTUNITÉ - À saisir immédiatement"
-        elif score >= 60:
-            return "✅ BONNE OPPORTUNITÉ - Analyse approfondie recommandée"
-        elif score >= 40:
-            return "⚠️ OPPORTUNITÉ MOYENNE - Nécessite des ajustements"
-        else:
-            return "❌ OPPORTUNITÉ LIMITÉE - Rechercher d'autres produits"
-
-class EBayScraper:
-    """Scraper eBay simple"""
-    
-    def __init__(self):
-        self.session = requests.Session()
-        self.business_analyzer = BusinessAnalyzer()
-        self.setup_session()
-    
-    def setup_session(self):
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
-    
-    def extract_product_data(self, url):
-        """Extrait les données du produit"""
-        try:
-            response = self.session.get(url, timeout=30)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Données de base
-            data = {
-                'url': url,
-                'date_analyse': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'titre_original': 'Non trouvé',
-                'prix': '0',
-                'vendeur': 'Non trouvé',
-                'livraison': 'Non spécifié',
-                'localisation': 'Non spécifié'
-            }
-            
-            # Titre
-            title_elem = soup.find('h1')
-            if title_elem:
-                data['titre_original'] = title_elem.get_text(strip=True)[:200]
-            
-            # Prix
-            price_match = re.search(r'"price":\s*"([\d\.,]+)"', response.text)
-            if price_match:
-                data['prix'] = price_match.group(1)
-            
-            return data
-            
-        except Exception as e:
-            print(f"Erreur extraction: {e}")
-            return None
-
-# Initialisation
-scraper = EBayScraper()
+    return debug_info
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    """Page principale"""
+    """Page principale debug"""
     if request.method == 'POST':
         url = request.form.get('url', '').strip()
-        
-        if not url:
-            return render_template_string(HTML_SIMPLE, resultats={
-                'erreur': 'Veuillez entrer une URL eBay'
-            })
-        
-        try:
-            # 1. Extraire les données du produit
-            product_data = scraper.extract_product_data(url)
-            
-            if not product_data:
-                return render_template_string(HTML_SIMPLE, resultats={
-                    'erreur': 'Impossible d\'analyser ce produit'
-                })
-            
-            # 2. Traduire le titre
-            titre_traduit = scraper.business_analyzer.translate_title_fr(product_data['titre_original'])
-            
-            # 3. Calculer la rentabilité
-            profitability = scraper.business_analyzer.calculate_profitability(
-                ebay_price_str=product_data['prix'],
-                pinduoduo_price=8,  # Exemple pour Crest 3D
-                quantity=25  # Lot de 25 sachets
-            )
-            
-            # 4. Générer les recommandations
-            recommendations = scraper.business_analyzer.generate_recommendations(
-                product_data, profitability
-            )
-            
-            # 5. Calculer le score d'opportunité
-            opportunity_score = scraper.business_analyzer.calculate_opportunity_score(
-                profitability, product_data
-            )
-            
-            # 6. Obtenir le verdict
-            verdict = scraper.business_analyzer.get_verdict(opportunity_score)
-            
-            # 7. Préparer les résultats
-            resultats = {
-                'titre_traduit': titre_traduit,
-                'rentabilite': profitability,
-                'recommandations': recommendations,
-                'score_opportunite': opportunity_score,
-                'verdict': verdict,
-                'produit': product_data,
-                'erreur': None
-            }
-            
-            return render_template_string(HTML_SIMPLE, resultats=resultats)
-            
-        except Exception as e:
-            print(f"Erreur analyse: {e}")
-            return render_template_string(HTML_SIMPLE, resultats={
-                'erreur': f"Erreur lors de l'analyse: {str(e)}"
-            })
+        if url:
+            debug_data = fetch_ebay_data_debug(url)
+            return render_template_string(HTML_DEBUG, debug_data=debug_data)
     
-    return render_template_string(HTML_SIMPLE, resultats=None)
+    return render_template_string(HTML_DEBUG, debug_data=None)
 
-@app.route('/health')
-def health():
-    return {'status': 'healthy', 'timestamp': datetime.now().isoformat()}
+@app.route('/api/debug', methods=['POST'])
+def api_debug():
+    """API pour le debug"""
+    data = request.json
+    url = data.get('url', '')
+    
+    if not url:
+        return jsonify({'error': 'URL required'}), 400
+    
+    debug_data = fetch_ebay_data_debug(url)
+    return jsonify(debug_data)
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    print(f"🚀 Analyseur Business eBay démarré")
-    print(f"📡 Port: {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    print("🔧 Mode DEBUG activé - Affichage des données brutes eBay")
+    print("📡 Serveur démarré sur http://localhost:5000")
+    print("🔍 Utilisez l'interface web pour analyser une URL eBay")
+    app.run(host='0.0.0.0', port=5000, debug=True)
