@@ -4,3 +4,4 @@ beautifulsoup4==4.12.2
 html5lib==1.1
 gunicorn==21.2.0
 urllib3==1.26.18
+deep-translator==1.11.4
