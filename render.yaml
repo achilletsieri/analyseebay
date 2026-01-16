@@ -7,7 +7,7 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: DEEPSEEK_API_KEY
+      - key: sk-0ad31e2fa19943548ede1a63fb9e22d5
         sync: false  # À configurer manuellement
       - key: SESSION_SECRET
         generateValue: true
