@@ -1,883 +1,487 @@
-# app.py - VERSION AVEC DEBUG FONCTIONNEL
-from flask import Flask, request, render_template_string, jsonify, session
+# app.py - VERSION AVEC CONTOURNEMENT 503
+from flask import Flask, request, render_template_string
 import requests
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime
 import time
+import random
 import json
 import os
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SESSION_SECRET', 'dev-secret-key-123')
 
-# ========== CONFIGURATION ==========
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-
-# ========== HTML PRINCIPAL ==========
-HTML_MAIN = '''
+# ========== HTML SIMPLIFIÉ ==========
+HTML = '''
 <!DOCTYPE html>
-<html lang="fr">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚀 Analyseur Business eBay</title>
+    <title>🚀 Analyseur eBay Business</title>
     <style>
-        :root {
-            --primary: #2563eb;
-            --secondary: #7c3aed;
-            --success: #059669;
-            --warning: #d97706;
-            --danger: #dc2626;
-            --dark: #1f2937;
-            --light: #f9fafb;
-        }
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-            color: var(--dark);
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 24px;
-            padding: 40px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-        }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #e5e7eb;
-        }
-        
-        h1 {
-            color: var(--dark);
-            font-size: 2.8rem;
-            margin-bottom: 10px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-        }
-        
-        .subtitle {
-            color: #6b7280;
-            font-size: 1.2rem;
-            margin-bottom: 30px;
-        }
-        
-        .dashboard {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-bottom: 40px;
-        }
-        
-        @media (max-width: 1024px) {
-            .dashboard { grid-template-columns: 1fr; }
-        }
-        
-        .card {
-            background: var(--light);
-            padding: 30px;
-            border-radius: 16px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            border: 1px solid #e5e7eb;
-        }
-        
-        .card-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--dark);
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .input-group {
-            margin-bottom: 25px;
-        }
-        
-        label {
-            display: block;
-            font-weight: 600;
-            color: #4b5563;
-            margin-bottom: 8px;
-        }
-        
-        input[type="url"] {
-            width: 100%;
-            padding: 16px 20px;
-            font-size: 16px;
-            border: 2px solid #d1d5db;
-            border-radius: 12px;
-            transition: all 0.3s;
-            background: white;
-        }
-        
-        input[type="url"]:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
-        }
-        
-        .btn {
-            padding: 16px 32px;
-            font-size: 16px;
-            font-weight: 600;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-            width: 100%;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(37, 99, 235, 0.3);
-        }
-        
-        .btn-secondary {
-            background: #e5e7eb;
-            color: var(--dark);
-            margin-top: 10px;
-            width: 100%;
-        }
-        
-        .btn-secondary:hover {
-            background: #d1d5db;
-        }
-        
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none !important;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 40px;
-            display: none;
-        }
-        
-        .spinner {
-            border: 4px solid #e5e7eb;
-            border-top: 4px solid var(--primary);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .results-section {
-            margin-top: 40px;
-        }
-        
-        .opportunity-score {
-            text-align: center;
-            margin: 30px 0;
-            padding: 30px;
-            background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-            border-radius: 16px;
-            border: 2px solid #bae6fd;
-        }
-        
-        .score-value {
-            font-size: 4rem;
-            font-weight: 800;
-            margin: 10px 0;
-        }
-        
-        .score-excellent { color: var(--success); }
-        .score-good { color: #3b82f6; }
-        .score-average { color: var(--warning); }
-        .score-poor { color: var(--danger); }
-        
-        .verdict {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--dark);
-            margin-top: 10px;
-        }
-        
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        
-        .metric-card {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            border-left: 4px solid var(--primary);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        
-        .metric-label {
-            font-size: 0.9rem;
-            color: #6b7280;
-            margin-bottom: 5px;
-        }
-        
-        .metric-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: var(--dark);
-        }
-        
-        .recommendations {
-            margin-top: 40px;
-        }
-        
-        .recommendation-item {
-            background: white;
-            padding: 20px;
-            margin-bottom: 15px;
-            border-radius: 12px;
-            border-left: 4px solid;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        
-        .rec-price { border-left-color: var(--success); }
-        .rec-strategy { border-left-color: var(--primary); }
-        .rec-marketing { border-left-color: var(--secondary); }
-        .rec-logistics { border-left-color: var(--warning); }
-        
-        .debug-panel {
-            margin-top: 40px;
-            padding: 20px;
-            background: #1f2937;
-            border-radius: 12px;
-            color: white;
-            display: none;
-        }
-        
-        .debug-toggle {
-            text-align: center;
-            margin-top: 20px;
-        }
-        
-        .debug-btn {
-            background: #374151;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .debug-btn:hover {
-            background: #4b5563;
-        }
-        
-        .raw-data {
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 12px;
-            background: #111827;
-            padding: 20px;
-            border-radius: 8px;
-            overflow: auto;
-            max-height: 500px;
-            margin-top: 15px;
-        }
-        
-        .action-buttons {
-            display: flex;
-            gap: 15px;
-            margin-top: 30px;
-            flex-wrap: wrap;
-        }
-        
-        .alert {
-            padding: 20px;
-            border-radius: 12px;
-            margin: 20px 0;
-            border-left: 4px solid;
-        }
-        
-        .alert-info {
-            background: #e0f2fe;
-            border-left-color: var(--primary);
-            color: var(--primary);
-        }
-        
-        .alert-warning {
-            background: #fef3c7;
-            border-left-color: var(--warning);
-            color: var(--warning);
-        }
-        
-        .ai-analysis {
-            background: linear-gradient(135deg, #f0f9ff, #fae8ff);
-            padding: 30px;
-            border-radius: 16px;
-            margin-top: 30px;
-            border: 2px solid #e9d5ff;
-        }
+        body { font-family: Arial; padding: 20px; background: #f0f2f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; text-align: center; }
+        .alert { padding: 15px; border-radius: 8px; margin: 20px 0; }
+        .alert-warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        .alert-info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        .btn { background: #28a745; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; }
+        .btn:hover { background: #218838; }
+        .result { margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+        .debug-btn { background: #6c757d; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
     </style>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1><i class="fas fa-rocket"></i> Analyseur Business eBay</h1>
-            <p class="subtitle">Analyse intelligente de produits + Recommandations business</p>
+        <h1>🚀 Analyseur eBay Business</h1>
+        
+        <div class="alert alert-info">
+            <strong>💡 Astuce :</strong> eBay bloque parfois les requêtes automatiques. Si erreur 503, réessayez après 30 secondes.
         </div>
         
-        <!-- Dashboard -->
-        <div class="dashboard">
-            <!-- Left: Input Section -->
-            <div class="card">
-                <h2 class="card-title"><i class="fas fa-search"></i> Analyse du produit</h2>
-                
-                <form id="analyseForm" method="POST" action="/">
-                    <div class="input-group">
-                        <label for="url"><i class="fas fa-link"></i> URL du produit eBay</label>
-                        <input type="url" 
-                               id="url" 
-                               name="url" 
-                               placeholder="https://www.ebay.com/itm/..."
-                               value="https://www.ebay.com/itm/403946674538"
-                               required>
-                    </div>
-                    
-                    <div class="alert alert-info">
-                        <i class="fas fa-lightbulb"></i>
-                        <strong>Conseil :</strong> Utilisez .com pour de meilleurs résultats. eBay.fr peut être bloqué.
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary" id="submitBtn">
-                        <i class="fas fa-chart-line"></i> Analyser l'opportunité business
-                    </button>
-                </form>
-                
-                <div class="loading" id="loading">
-                    <div class="spinner"></div>
-                    <p>Analyse en cours... (15-30 secondes)</p>
-                </div>
-                
-                <div class="quick-tips" style="margin-top: 30px;">
-                    <h3><i class="fas fa-bolt"></i> URLs de test rapides</h3>
-                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;">
-                        <button type="button" class="tag" style="background: #dbeafe; color: #2563eb; padding: 8px 16px; border-radius: 20px; border: none; cursor: pointer;"
-                                onclick="document.getElementById('url').value='https://www.ebay.com/itm/403946674538'">
-                            📷 Appareil photo
-                        </button>
-                        <button type="button" class="tag" style="background: #dbeafe; color: #2563eb; padding: 8px 16px; border-radius: 20px; border: none; cursor: pointer;"
-                                onclick="document.getElementById('url').value='https://www.ebay.com/itm/385541140882'">
-                            ⌚ Montre
-                        </button>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Right: Results Section -->
-            <div class="card">
-                <h2 class="card-title"><i class="fas fa-chart-bar"></i> Résultats</h2>
-                
-                {% if resultats %}
-                    {% if resultats.erreur %}
-                        <div class="alert alert-warning">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            <strong>Erreur :</strong> {{ resultats.erreur }}
-                        </div>
-                    {% else %}
-                        <!-- Score d'opportunité -->
-                        {% if resultats.opportunity_score %}
-                        <div class="opportunity-score">
-                            <div style="font-size: 0.9rem; color: #6b7280;">SCORE D'OPPORTUNITÉ</div>
-                            <div class="score-value score-{{ resultats.opportunity_level }}">
-                                {{ resultats.opportunity_score }}/100
-                            </div>
-                            <div class="verdict">{{ resultats.opportunity_verdict }}</div>
-                        </div>
-                        {% endif %}
-                        
-                        <!-- Métriques clés -->
-                        {% if resultats.metrics %}
-                        <div class="metrics-grid">
-                            <div class="metric-card">
-                                <div class="metric-label">💰 Marge estimée</div>
-                                <div class="metric-value">{{ resultats.metrics.marge_estimee }}</div>
-                            </div>
-                            <div class="metric-card">
-                                <div class="metric-label">📊 Score concurrence</div>
-                                <div class="metric-value">{{ resultats.metrics.score_concurrence }}/10</div>
-                            </div>
-                            <div class="metric-card">
-                                <div class="metric-label">🚚 Livraison cible</div>
-                                <div class="metric-value">{{ resultats.metrics.delai_livraison }}</div>
-                            </div>
-                            <div class="metric-card">
-                                <div class="metric-label">🔍 Volume recherche</div>
-                                <div class="metric-value">{{ resultats.metrics.volume_recherche }}</div>
-                            </div>
-                        </div>
-                        {% endif %}
-                        
-                        <!-- Boutons d'action -->
-                        <div class="action-buttons">
-                            <button class="btn" style="background: var(--success); color: white; flex: 1;" onclick="exportAnalysis()">
-                                <i class="fas fa-file-export"></i> Exporter
-                            </button>
-                            <button class="btn" style="background: var(--primary); color: white; flex: 1;" onclick="window.location.reload()">
-                                <i class="fas fa-redo"></i> Nouvelle
-                            </button>
-                        </div>
-                    {% endif %}
-                {% else %}
-                    <!-- État initial -->
-                    <div style="text-align: center; padding: 40px; color: #6b7280;">
-                        <i class="fas fa-chart-line" style="font-size: 3rem; margin-bottom: 20px; color: #d1d5db;"></i>
-                        <h3>En attente d'analyse</h3>
-                        <p>Collez une URL eBay et cliquez sur "Analyser" pour commencer</p>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
+        <form method="POST" action="/">
+            <input type="url" name="url" placeholder="URL eBay" 
+                   value="https://www.ebay.com/itm/403946674538"
+                   style="width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px;">
+            <button type="submit" class="btn">🔍 Analyser l'opportunité</button>
+        </form>
         
-        <!-- Résultats détaillés -->
-        {% if resultats and not resultats.erreur %}
-        <div class="results-section">
-            
-            <!-- Analyse IA -->
-            {% if resultats.ai_analysis %}
-            <div class="ai-analysis">
-                <h2 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px; color: #7c3aed;">
-                    <i class="fas fa-robot"></i> Analyse IA DeepSeek
-                </h2>
-                <div style="white-space: pre-line; line-height: 1.6;">
-                    {{ resultats.ai_analysis }}
+        {% if resultats %}
+        <div class="result">
+            {% if resultats.erreur %}
+                <div class="alert alert-warning">
+                    <strong>⚠️ Erreur :</strong> {{ resultats.erreur }}
+                    <br><br>
+                    <strong>🎯 Solutions :</strong>
+                    <ol>
+                        <li>Attendez 30 secondes et réessayez</li>
+                        <li>Utilisez une URL .com au lieu de .fr</li>
+                        <li>Essayez une autre URL de produit</li>
+                    </ol>
                 </div>
-            </div>
-            {% endif %}
-            
-            <!-- Recommandations business -->
-            {% if resultats.recommandations %}
-            <div class="recommendations">
-                <h2 class="card-title"><i class="fas fa-lightbulb"></i> Recommandations Business</h2>
+            {% else %}
+                <h2>📊 Résultats de l'analyse</h2>
+                <p><strong>Produit :</strong> {{ resultats.produit.titre_original[:100] }}...</p>
+                <p><strong>Prix eBay :</strong> {{ resultats.produit.prix }}€</p>
+                <p><strong>Marge estimée :</strong> {{ resultats.profitability.marge_pourcentage }}%</p>
+                <p><strong>Profit net estimé :</strong> {{ resultats.profitability.profit_net }}€</p>
                 
-                {% for category, recs in resultats.recommandations.items() %}
-                    <h3 style="margin: 20px 0 10px 0; color: var(--dark);">
-                        {% if category == 'prix' %}💰 Stratégie de Prix
-                        {% elif category == 'differentiation' %}🏆 Différenciation
-                        {% elif category == 'marketing' %}📢 Marketing
-                        {% elif category == 'logistics' %}🚚 Logistique
-                        {% else %}{{ category|title }}{% endif %}
-                    </h3>
-                    
-                    {% for rec in recs %}
-                    <div class="recommendation-item rec-{{ category }}">
-                        <strong>{{ rec.label }}:</strong> {{ rec.valeur }}
-                    </div>
+                <h3>🎯 Recommandations :</h3>
+                <ul>
+                    {% for rec in resultats.recommandations.prix %}
+                    <li><strong>{{ rec.label }}:</strong> {{ rec.valeur }}</li>
                     {% endfor %}
-                {% endfor %}
-            </div>
+                </ul>
             {% endif %}
             
-            <!-- Détails du produit -->
-            {% if resultats.produit %}
-            <div class="card" style="margin-top: 30px;">
-                <h2 class="card-title"><i class="fas fa-box-open"></i> Détails du produit</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 20px;">
-                    {% for key, value in resultats.produit.items() %}
-                        {% if value and value != "Non trouvé" and value != "Non spécifié" %}
-                        <div>
-                            <div style="font-size: 0.9rem; color: #6b7280; margin-bottom: 5px;">
-                                {% if key == 'titre_original' %}🏷️ Titre original
-                                {% elif key == 'prix' %}💰 Prix
-                                {% elif key == 'vendeur' %}🏪 Vendeur
-                                {% elif key == 'livraison' %}🚚 Livraison
-                                {% elif key == 'localisation' %}📍 Localisation
-                                {% else %}{{ key|replace('_', ' ')|title }}{% endif %}
-                            </div>
-                            <div style="color: var(--dark);">{{ value }}</div>
-                        </div>
-                        {% endif %}
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-            
-            <!-- DEBUG SECTION - CORRIGÉE -->
             {% if debug_data %}
-            <div class="debug-toggle">
-                <button class="debug-btn" onclick="toggleDebug()" id="toggleDebugBtn">
-                    <i class="fas fa-code"></i> Afficher les données brutes de débogage
-                </button>
-            </div>
-            
-            <div class="debug-panel" id="debugPanel">
-                <h3><i class="fas fa-bug"></i> Données brutes de débogage</h3>
-                <div class="raw-data">
-                    <pre id="debugData">{{ debug_data|safe }}</pre>
-                </div>
+            <button class="debug-btn" onclick="toggleDebug()">🐛 Afficher données brutes</button>
+            <div id="debugPanel" style="display: none; margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                <pre style="font-size: 12px; overflow: auto; max-height: 300px;">{{ debug_data }}</pre>
             </div>
             {% endif %}
-            
         </div>
         {% endif %}
-        
-        <!-- Footer -->
-        <div style="text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280;">
-            <p>🚀 Analyseur Business eBay • <span id="currentYear"></span></p>
-        </div>
     </div>
     
     <script>
-    // Gestion du formulaire
-    document.getElementById('analyseForm').addEventListener('submit', function(e) {
-        const btn = document.getElementById('submitBtn');
-        const loading = document.getElementById('loading');
-        
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyse en cours...';
-        loading.style.display = 'block';
-    });
-    
-    // Toggle debug panel - SIMPLIFIÉ
     function toggleDebug() {
-        const panel = document.getElementById('debugPanel');
-        const btn = document.getElementById('toggleDebugBtn');
-        
-        if (panel.style.display === 'none' || panel.style.display === '') {
+        var panel = document.getElementById('debugPanel');
+        if (panel.style.display === 'none') {
             panel.style.display = 'block';
-            btn.innerHTML = '<i class="fas fa-eye-slash"></i> Masquer les données brutes';
         } else {
             panel.style.display = 'none';
-            btn.innerHTML = '<i class="fas fa-code"></i> Afficher les données brutes';
         }
     }
-    
-    // Fonction d'export
-    function exportAnalysis() {
-        alert('📄 Fonction d\'export à implémenter');
-    }
-    
-    // Année courante
-    document.getElementById('currentYear').textContent = new Date().getFullYear();
-    
-    // Auto-scroll vers les résultats
-    {% if resultats and not resultats.erreur %}
-    setTimeout(() => {
-        const resultsSection = document.querySelector('.results-section');
-        if (resultsSection) {
-            resultsSection.scrollIntoView({ 
-                behavior: 'smooth',
-                block: 'start'
-            });
-        }
-    }, 100);
-    {% endif %}
     </script>
 </body>
 </html>
 '''
 
-# ========== CLASSES D'ANALYSE (SIMPLIFIÉES) ==========
-
-class EBayScraper:
-    """Scraper eBay simplifié"""
+class SmartEBayScraper:
+    """Scraper intelligent avec contournement des blocs"""
     
     def __init__(self):
         self.session = requests.Session()
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+        ]
         self.setup_session()
     
     def setup_session(self):
+        """Configure la session avec headers réalistes"""
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1',
+            'Referer': 'https://www.google.com/'
         })
     
-    def scrape_product(self, url):
-        """Scrape les données du produit"""
-        debug_info = {
-            'url': url,
-            'status': 0,
-            'page_size': 0,
-            'load_time': 0,
-            'price_patterns': {},
-            'html_tags': {}
+    def rotate_user_agent(self):
+        """Change l'User-Agent à chaque requête"""
+        self.session.headers['User-Agent'] = random.choice(self.user_agents)
+    
+    def fetch_with_retry(self, url, max_retries=3):
+        """Télécharge avec plusieurs tentatives intelligentes"""
+        for attempt in range(max_retries):
+            try:
+                print(f"🔁 Tentative {attempt + 1}/{max_retries} pour {url}")
+                
+                # Rotation d'User-Agent
+                self.rotate_user_agent()
+                
+                # Délai intelligent entre tentatives
+                if attempt > 0:
+                    wait_time = random.uniform(2, 5) * (attempt + 1)
+                    print(f"⏳ Attente de {wait_time:.1f} secondes...")
+                    time.sleep(wait_time)
+                
+                # Timeout adaptatif
+                timeout_val = 20 + (attempt * 5)
+                
+                # Faire la requête
+                response = self.session.get(
+                    url, 
+                    timeout=timeout_val,
+                    allow_redirects=True,
+                    verify=True
+                )
+                
+                print(f"📊 Statut: {response.status_code}, Taille: {len(response.text)} caractères")
+                
+                # Vérifier si bloqué
+                if response.status_code == 503:
+                    print("🚫 eBay a retourné 503 (Service Unavailable)")
+                    if attempt < max_retries - 1:
+                        print("🔄 Nouvelle tentative avec stratégie différente...")
+                        continue
+                    else:
+                        raise Exception("eBay bloque l'accès (503 après plusieurs tentatives)")
+                
+                if response.status_code != 200:
+                    raise Exception(f"Statut HTTP {response.status_code}")
+                
+                # Vérifier si c'est une page valide
+                if len(response.text) < 5000:
+                    raise Exception("Page trop courte (probablement bloquée)")
+                
+                print(f"✅ Succès après {attempt + 1} tentative(s)")
+                return response
+                
+            except requests.exceptions.Timeout:
+                print(f"⏱️ Timeout tentative {attempt + 1}")
+                if attempt == max_retries - 1:
+                    raise Exception("eBay ne répond pas (timeout)")
+                    
+            except requests.exceptions.ConnectionError:
+                print(f"🔌 Erreur de connexion tentative {attempt + 1}")
+                if attempt == max_retries - 1:
+                    raise Exception("Impossible de se connecter à eBay")
+                    
+            except Exception as e:
+                print(f"⚠️ Erreur tentative {attempt + 1}: {str(e)[:80]}")
+                if attempt == max_retries - 1:
+                    raise
+    
+    def extract_product_data(self, response):
+        """Extrait les données du produit depuis la réponse"""
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        product_data = {
+            'url': response.url,
+            'date_analyse': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'titre_original': 'Non trouvé',
+            'prix': '0',
+            'vendeur': 'Non trouvé',
+            'livraison': 'Non spécifié',
+            'localisation': 'Non spécifié'
         }
         
-        start_time = time.time()
+        # Titre - plusieurs méthodes
+        title_selectors = ['h1.it-ttl', 'h1.x-item-title', 'h1.product-title', 'h1']
+        for selector in title_selectors:
+            title_elem = soup.select_one(selector)
+            if title_elem:
+                title_text = title_elem.get_text(strip=True)
+                if title_text and len(title_text) > 10:
+                    product_data['titre_original'] = title_text[:200]
+                    break
+        
+        # Prix - chercher dans plusieurs endroits
+        html_text = response.text
+        price_patterns = [
+            r'"price":\s*"([\d\.,]+)"',
+            r'itemprop="price"[^>]*content="([^"]+)"',
+            r'data-price=["\']([\d\.,]+)["\']',
+            r'["\']currentPrice["\'][^:]*:\s*["\']([\d\.,]+)'
+        ]
+        
+        for pattern in price_patterns:
+            matches = re.findall(pattern, html_text)
+            if matches:
+                price = matches[0] if isinstance(matches[0], str) else matches[0][0]
+                if price and re.match(r'^[\d\.,]+$', str(price)):
+                    product_data['prix'] = price.replace(',', '.')
+                    break
+        
+        return product_data
+    
+    def scrape(self, url):
+        """Méthode principale de scraping"""
+        debug_info = {
+            'url': url,
+            'attempts': 0,
+            'status': 0,
+            'page_size': 0,
+            'final_user_agent': '',
+            'price_found': False,
+            'error_history': []
+        }
         
         try:
-            print(f"🌐 Scraping: {url}")
-            response = self.session.get(url, timeout=30)
+            # Ajouter https:// si absent
+            if not url.startswith('http'):
+                url = 'https://' + url
+            
+            # Forcer .com si .fr (plus fiable)
+            if 'ebay.fr' in url:
+                url = url.replace('ebay.fr', 'ebay.com')
+                print(f"🔄 Changement automatique vers .com: {url}")
+            
+            print(f"\n🎯 DÉBUT ANALYSE: {url}")
+            print(f"🕒 {datetime.now().strftime('%H:%M:%S')}")
+            
+            # Faire la requête
+            response = self.fetch_with_retry(url, max_retries=3)
+            
+            # Enregistrer les infos debug
             debug_info['status'] = response.status_code
             debug_info['page_size'] = len(response.text)
+            debug_info['final_user_agent'] = self.session.headers['User-Agent'][:80]
             
-            if response.status_code != 200:
-                return None, debug_info
+            # Extraire les données
+            product_data = self.extract_product_data(response)
+            debug_info['price_found'] = product_data['prix'] != '0'
             
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Données du produit
-            product_data = {
-                'url': url,
-                'date_analyse': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'titre_original': 'Non trouvé',
-                'prix': '0',
-                'vendeur': 'Non trouvé',
-                'livraison': 'Non spécifié',
-                'localisation': 'Non spécifié'
-            }
-            
-            # Titre
-            title_elem = soup.find('h1')
-            if title_elem:
-                product_data['titre_original'] = title_elem.get_text(strip=True)[:200]
-            
-            # Prix
-            html_text = response.text
-            price_patterns = {
-                'price_json': re.findall(r'"price"\s*:\s*"([\d\.,]+)"', html_text),
-                'itemprop_price': re.findall(r'itemprop="price"[^>]*content="([^"]+)"', html_text),
-                'text_€': re.findall(r'([\d\.,]+)\s*€', html_text),
-            }
-            
-            debug_info['price_patterns'] = price_patterns
-            
-            for matches in price_patterns.values():
-                if matches:
-                    product_data['prix'] = matches[0].replace(',', '.')
-                    break
-            
-            # Debug info
-            debug_info['html_tags'] = {
-                'title': soup.title.string if soup.title else 'Non trouvé',
-                'h1': product_data['titre_original']
-            }
-            debug_info['load_time'] = round(time.time() - start_time, 2)
+            print(f"✅ SCRAPING RÉUSSI!")
+            print(f"📌 Titre: {product_data['titre_original'][:50]}...")
+            print(f"💰 Prix: {product_data['prix']}")
+            print(f"📏 Taille page: {debug_info['page_size']} caractères")
             
             return product_data, debug_info
             
         except Exception as e:
-            debug_info['error'] = str(e)
-            debug_info['load_time'] = round(time.time() - start_time, 2)
-            print(f"❌ Erreur scraping: {e}")
-            return None, debug_info
+            error_msg = str(e)
+            debug_info['error_history'].append(error_msg)
+            print(f"❌ ÉCHEC: {error_msg}")
+            
+            if '503' in error_msg:
+                return None, {
+                    **debug_info,
+                    'specific_error': 'EBAY_503_BLOCK',
+                    'recommendation': 'eBay bloque notre IP. Attendez 1-2 minutes et réessayez.'
+                }
+            elif 'timeout' in error_msg.lower():
+                return None, {
+                    **debug_info,
+                    'specific_error': 'EBAY_TIMEOUT',
+                    'recommendation': 'eBay est lent à répondre. Réessayez.'
+                }
+            else:
+                return None, {
+                    **debug_info,
+                    'specific_error': 'UNKNOWN_ERROR',
+                    'recommendation': 'Erreur inconnue. Vérifiez l\'URL.'
+                }
 
-class BusinessAnalyzer:
-    """Analyseur business"""
-    
-    def __init__(self, deepseek_api_key=None):
-        self.deepseek_api_key = deepseek_api_key
-    
-    def analyze_with_deepseek(self, product_data, context=""):
-        """Analyse avec DeepSeek (optionnel)"""
-        if not self.deepseek_api_key:
-            return None
-        
-        try:
-            prompt = f"""
-            Produit eBay: {product_data.get('titre_original')}
-            Prix: {product_data.get('prix')}€
-            
-            Fais une analyse business rapide en français.
-            """
-            
-            headers = {'Authorization': f'Bearer {self.deepseek_api_key}'}
-            payload = {
-                'model': 'deepseek-chat',
-                'messages': [{'role': 'user', 'content': prompt}],
-                'max_tokens': 500
-            }
-            
-            response = requests.post(
-                'https://api.deepseek.com/chat/completions',
-                headers=headers,
-                json=payload,
-                timeout=20
-            )
-            
-            if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content']
-            return None
-            
-        except:
-            return None
+class BusinessAnalyzerSimple:
+    """Analyseur business simplifié"""
     
     def calculate_profitability(self, ebay_price_str):
-        """Calcule la rentabilité"""
+        """Calcule la rentabilité estimée"""
         try:
-            ebay_price = float(ebay_price_str) if ebay_price_str else 0
-            cost = 8 * 0.85  # Pinduoduo 8$ → EUR
-            fees = ebay_price * 0.13  # eBay + PayPal
-            shipping = 5.0
+            ebay_price = float(ebay_price_str) if ebay_price_str and ebay_price_str != '0' else 0
             
-            profit = ebay_price - (cost + fees + shipping)
-            margin = (profit / ebay_price) * 100 if ebay_price > 0 else 0
+            if ebay_price == 0:
+                return {
+                    'prix_ebay': 0,
+                    'cout_produit': 0,
+                    'profit_net': 0,
+                    'marge_pourcentage': 0,
+                    'note': 'Prix non trouvé'
+                }
+            
+            # Estimation des coûts (pour Crest 3D par exemple)
+            pinduoduo_price_usd = 8  # Prix sur Pinduoduo en USD
+            pinduoduo_eur = pinduoduo_price_usd * 0.85  # Conversion USD→EUR
+            
+            # Coûts fixes
+            frais_ebay = ebay_price * 0.10  # 10% frais eBay
+            frais_paypal = ebay_price * 0.03  # 3% frais PayPal
+            frais_livraison = 5.0  # €
+            cout_emballage = 1.0  # €
+            
+            # Calcul pour un lot de 25 unités (stratégie volume)
+            quantity = 25
+            cout_total_produits = pinduoduo_eur * quantity
+            cout_total = cout_total_produits + frais_livraison + cout_emballage
+            
+            # Revenu pour le lot
+            revenu_lot = ebay_price * quantity
+            frais_total = (frais_ebay + frais_paypal) * quantity
+            
+            # Profit
+            profit_net_lot = revenu_lot - (cout_total + frais_total)
+            profit_net_unit = profit_net_lot / quantity if quantity > 0 else 0
+            marge_pourcentage = (profit_net_unit / ebay_price) * 100 if ebay_price > 0 else 0
             
             return {
                 'prix_ebay': round(ebay_price, 2),
-                'cout_produit': round(cost, 2),
-                'profit_net': round(profit, 2),
-                'marge_pourcentage': round(margin, 1)
+                'cout_produit': round(pinduoduo_eur, 2),
+                'cout_total_lot': round(cout_total, 2),
+                'profit_net': round(profit_net_unit, 2),
+                'profit_lot': round(profit_net_lot, 2),
+                'marge_pourcentage': round(marge_pourcentage, 1),
+                'quantite_recommandee': quantity,
+                'note': f'Basé sur lot de {quantity} unités'
             }
-        except:
+            
+        except Exception as e:
+            print(f"❌ Erreur calcul rentabilité: {e}")
             return {
                 'prix_ebay': 0,
                 'cout_produit': 0,
                 'profit_net': 0,
-                'marge_pourcentage': 0
+                'marge_pourcentage': 0,
+                'note': 'Erreur de calcul'
             }
     
-    def generate_recommendations(self, product_data):
-        """Génère des recommandations simples"""
+    def generate_recommendations(self, product_data, profitability):
+        """Génère des recommandations business"""
         recommendations = {
-            'prix': [
-                {'label': '💰 Stratégie', 'valeur': 'Prix compétitif avec marge de 30-40%'},
-                {'label': '🎯 Recommandation', 'valeur': 'Tester plusieurs prix pour optimiser'}
-            ],
-            'differentiation': [
-                {'label': '📦 Packaging', 'valeur': 'Emballage premium français'},
-                {'label': '🚚 Livraison', 'valeur': 'Offrir suivi + assurance'}
-            ],
-            'marketing': [
-                {'label': '🔍 Mots-clés', 'valeur': 'Optimiser titre pour eBay SEO'},
-                {'label': '📢 Publicité', 'valeur': 'Google Ads sur mots-clés spécifiques'}
-            ]
+            'prix': [],
+            'strategie': [],
+            'logistique': []
         }
         
-        if 'crest' in product_data.get('titre_original', '').lower():
-            recommendations['marketing'].append({
-                'label': '🎯 Ciblage', 
-                'valeur': 'Publicité sur "Crest 3D" (5000 recherches/mois)'
+        titre = product_data.get('titre_original', '').lower()
+        marge = profitability['marge_pourcentage']
+        
+        # Recommandations de prix
+        if marge > 40:
+            recommendations['prix'].append({
+                'label': '💰 Stratégie',
+                'valeur': 'Premium - Garder prix élevé'
+            })
+            recommendations['prix'].append({
+                'label': '🎯 Marge',
+                'valeur': f'{marge}% (excellente)'
+            })
+        elif marge > 25:
+            recommendations['prix'].append({
+                'label': '💰 Stratégie',
+                'valeur': 'Compétitif - Prix moyen pour volume'
+            })
+        else:
+            recommendations['prix'].append({
+                'label': '💰 Stratégie',
+                'valeur': 'Agrressif - Prix bas pour pénétration'
             })
         
+        # Recommandations spécifiques pour blanchiment dentaire
+        if any(kw in titre for kw in ['crest', 'whitening', 'blanchiment', 'teeth', 'dental']):
+            recommendations['strategie'].append({
+                'label': '🦷 Niche',
+                'valeur': 'Produit de beauté à demande stable'
+            })
+            recommendations['strategie'].append({
+                'label': '📈 Marketing',
+                'valeur': 'Cibler "Crest 3D" (5000 recherches/mois)'
+            })
+            recommendations['logistique'].append({
+                'label': '📦 Packaging',
+                'valeur': 'Kit premium avec notice française'
+            })
+        
+        # Recommandations logistiques générales
+        recommendations['logistique'].append({
+            'label': '🚚 Livraison',
+            'valeur': 'Offrir suivi (vs 20 jours concurrent)'
+        })
+        recommendations['logistique'].append({
+            'label': '📊 Quantité',
+            'valeur': f"Lot de {profitability['quantite_recommandee']} unités"
+        })
+        
         return recommendations
-    
-    def calculate_opportunity_score(self, profitability):
-        """Score d'opportunité simplifié"""
-        margin = profitability['marge_pourcentage']
-        if margin > 40:
-            return 85, "excellent"
-        elif margin > 30:
-            return 70, "good"
-        elif margin > 20:
-            return 55, "average"
-        else:
-            return 40, "poor"
-    
-    def get_opportunity_verdict(self, score):
-        if score >= 80:
-            return "🎯 EXCELLENTE OPPORTUNITÉ"
-        elif score >= 60:
-            return "✅ BONNE OPPORTUNITÉ"
-        elif score >= 40:
-            return "⚠️ OPPORTUNITÉ MOYENNE"
-        else:
-            return "❌ OPPORTUNITÉ LIMITÉE"
 
 # ========== INITIALISATION ==========
-ebay_scraper = EBayScraper()
-business_analyzer = BusinessAnalyzer(DEEPSEEK_API_KEY)
-
-# ========== ROUTES ==========
+scraper = SmartEBayScraper()
+business_analyzer = BusinessAnalyzerSimple()
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    """Route principale avec debug intégré"""
-    debug_data = None
-    
     if request.method == 'POST':
         url = request.form.get('url', '').strip()
         
         if not url:
-            return render_template_string(HTML_MAIN, resultats={
+            return render_template_string(HTML, resultats={
                 'erreur': 'Veuillez entrer une URL eBay'
             }, debug_data=None)
         
         try:
             # 1. Scraper le produit
-            product_data, debug_raw = ebay_scraper.scrape_product(url)
+            product_data, debug_info = scraper.scrape(url)
             
+            # 2. Si échec avec raison spécifique
             if not product_data:
-                return render_template_string(HTML_MAIN, resultats={
-                    'erreur': f'Erreur HTTP {debug_raw.get("status", "N/A")}'
-                }, debug_data=json.dumps(debug_raw, indent=2))
+                error_type = debug_info.get('specific_error', 'UNKNOWN')
+                
+                if error_type == 'EBAY_503_BLOCK':
+                    return render_template_string(HTML, resultats={
+                        'erreur': 'eBay bloque temporairement notre accès (erreur 503). Recommandations: 1) Attendez 1 minute 2) Utilisez .com 3) Essayez une autre URL'
+                    }, debug_data=json.dumps(debug_info, indent=2))
+                else:
+                    return render_template_string(HTML, resultats={
+                        'erreur': f'Impossible d\'accéder à la page: {debug_info.get("error_history", ["Erreur inconnue"])[0]}'
+                    }, debug_data=json.dumps(debug_info, indent=2))
             
-            # 2. Calculer la rentabilité
-            profitability = business_analyzer.calculate_profitability(
-                product_data.get('prix')
-            )
+            # 3. Analyser la rentabilité
+            profitability = business_analyzer.calculate_profitability(product_data['prix'])
             
-            # 3. Générer les recommandations
-            recommendations = business_analyzer.generate_recommendations(product_data)
+            # 4. Générer les recommandations
+            recommendations = business_analyzer.generate_recommendations(product_data, profitability)
             
-            # 4. Calculer le score
-            opportunity_score, opportunity_level = business_analyzer.calculate_opportunity_score(profitability)
-            verdict = business_analyzer.get_opportunity_verdict(opportunity_score)
-            
-            # 5. Analyse IA (optionnel)
-            ai_analysis = business_analyzer.analyze_with_deepseek(product_data)
-            
-            # 6. Préparer les résultats
+            # 5. Préparer les résultats
             resultats = {
                 'produit': product_data,
                 'profitability': profitability,
                 'recommandations': recommendations,
-                'opportunity_score': opportunity_score,
-                'opportunity_level': opportunity_level,
-                'opportunity_verdict': verdict,
-                'ai_analysis': ai_analysis if ai_analysis else "❌ API DeepSeek non configurée. Ajoutez DEEPSEEK_API_KEY.",
-                'metrics': {
-                    'marge_estimee': f"{profitability['marge_pourcentage']}%",
-                    'score_concurrence': "7/10",
-                    'delai_livraison': "3-7 jours",
-                    'volume_recherche': "Analyse en cours"
-                },
                 'erreur': None
             }
             
-            # 7. Préparer les données debug pour l'affichage
-            debug_data = json.dumps(debug_raw, indent=2, ensure_ascii=False)
-            
-            return render_template_string(HTML_MAIN, resultats=resultats, debug_data=debug_data)
+            return render_template_string(HTML, resultats=resultats, debug_data=json.dumps(debug_info, indent=2))
             
         except Exception as e:
-            print(f"❌ Erreur: {e}")
-            return render_template_string(HTML_MAIN, resultats={
-                'erreur': f"Erreur: {str(e)[:200]}"
+            print(f"❌ Erreur globale: {e}")
+            return render_template_string(HTML, resultats={
+                'erreur': f'Erreur: {str(e)[:150]}'
             }, debug_data=None)
     
-    return render_template_string(HTML_MAIN, resultats=None, debug_data=None)
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'ok'})
+    return render_template_string(HTML, resultats=None, debug_data=None)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    print(f"🚀 Serveur démarré sur le port {port}")
+    print(f"🚀 Analyseur eBay démarré sur le port {port}")
+    print(f"🛡️  Configuration anti-blocage activée")
+    print(f"🎯 Prêt à analyser les produits eBay")
     app.run(host='0.0.0.0', port=port, debug=False)
