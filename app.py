@@ -1,487 +1,979 @@
-# app.py - VERSION AVEC CONTOURNEMENT 503
-from flask import Flask, request, render_template_string
+# app.py - VERSION AVEC API EBAY OFFICIELLE (CORRIGÉE)
+from flask import Flask, request, render_template_string, jsonify
 import requests
-from bs4 import BeautifulSoup
-import re
-from datetime import datetime
-import time
-import random
 import json
 import os
+import re  # IMPORT MANQUANT
+from datetime import datetime
+from urllib.parse import quote
 
 app = Flask(__name__)
 
-# ========== HTML SIMPLIFIÉ ==========
+# ========== CONFIGURATION API EBAY ==========
+EBAY_APP_ID = os.environ.get('EBAY_APP_ID', '')
+EBAY_CERT_ID = os.environ.get('EBAY_CERT_ID', '')
+EBAY_ACCESS_TOKEN = os.environ.get('EBAY_ACCESS_TOKEN', '')
+
+# ========== HTML PROFESSIONNEL ==========
 HTML = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>🚀 Analyseur eBay Business</title>
+    <title>🚀 Analyseur eBay Pro - API Officielle</title>
     <style>
-        body { font-family: Arial; padding: 20px; background: #f0f2f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #2c3e50; text-align: center; }
-        .alert { padding: 15px; border-radius: 8px; margin: 20px 0; }
-        .alert-warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
-        .alert-info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
-        .btn { background: #28a745; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; }
-        .btn:hover { background: #218838; }
-        .result { margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
-        .debug-btn { background: #6c757d; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            margin: 0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #e5e7eb;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            font-size: 2.8rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        @media (max-width: 1024px) {
+            .dashboard { grid-template-columns: 1fr; }
+        }
+        
+        .input-card, .results-card {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 16px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .url-input {
+            width: 100%;
+            padding: 16px 20px;
+            font-size: 16px;
+            border: 2px solid #d1d5db;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        
+        .url-input:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+        }
+        
+        .analyze-btn {
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+            color: white;
+            border: none;
+            padding: 18px 40px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+        
+        .analyze-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .analyze-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+        
+        .spinner {
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #2563eb;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .product-display {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .product-image {
+            background: #f1f5f9;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .product-image img {
+            max-width: 100%;
+            border-radius: 8px;
+        }
+        
+        .product-info {
+            padding: 20px;
+        }
+        
+        .price-tag {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #059669;
+            margin: 10px 0;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .metric-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #2563eb;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            color: #6b7280;
+            margin-bottom: 5px;
+        }
+        
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #1f2937;
+        }
+        
+        .recommendations {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            margin-top: 30px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .rec-item {
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #10b981;
+        }
+        
+        .rec-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 5px;
+        }
+        
+        .rec-desc {
+            color: #4b5563;
+            font-size: 0.95rem;
+        }
+        
+        .api-status {
+            background: #e0f2fe;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #2563eb;
+        }
+        
+        .debug-btn {
+            background: #374151;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        
+        .raw-data {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 20px;
+            border-radius: 8px;
+            overflow: auto;
+            max-height: 400px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .success-badge {
+            background: #d1fae5;
+            color: #059669;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .error-box {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border-left: 4px solid #dc2626;
+        }
+        
+        .quick-links {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .quick-link {
+            background: #e0f2fe;
+            color: #2563eb;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            border: 1px solid #bfdbfe;
+        }
+        
+        .quick-link:hover {
+            background: #dbeafe;
+        }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
-        <h1>🚀 Analyseur eBay Business</h1>
-        
-        <div class="alert alert-info">
-            <strong>💡 Astuce :</strong> eBay bloque parfois les requêtes automatiques. Si erreur 503, réessayez après 30 secondes.
-        </div>
-        
-        <form method="POST" action="/">
-            <input type="url" name="url" placeholder="URL eBay" 
-                   value="https://www.ebay.com/itm/403946674538"
-                   style="width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ddd; border-radius: 6px;">
-            <button type="submit" class="btn">🔍 Analyser l'opportunité</button>
-        </form>
-        
-        {% if resultats %}
-        <div class="result">
-            {% if resultats.erreur %}
-                <div class="alert alert-warning">
-                    <strong>⚠️ Erreur :</strong> {{ resultats.erreur }}
-                    <br><br>
-                    <strong>🎯 Solutions :</strong>
-                    <ol>
-                        <li>Attendez 30 secondes et réessayez</li>
-                        <li>Utilisez une URL .com au lieu de .fr</li>
-                        <li>Essayez une autre URL de produit</li>
-                    </ol>
-                </div>
-            {% else %}
-                <h2>📊 Résultats de l'analyse</h2>
-                <p><strong>Produit :</strong> {{ resultats.produit.titre_original[:100] }}...</p>
-                <p><strong>Prix eBay :</strong> {{ resultats.produit.prix }}€</p>
-                <p><strong>Marge estimée :</strong> {{ resultats.profitability.marge_pourcentage }}%</p>
-                <p><strong>Profit net estimé :</strong> {{ resultats.profitability.profit_net }}€</p>
-                
-                <h3>🎯 Recommandations :</h3>
-                <ul>
-                    {% for rec in resultats.recommandations.prix %}
-                    <li><strong>{{ rec.label }}:</strong> {{ rec.valeur }}</li>
-                    {% endfor %}
-                </ul>
-            {% endif %}
-            
-            {% if debug_data %}
-            <button class="debug-btn" onclick="toggleDebug()">🐛 Afficher données brutes</button>
-            <div id="debugPanel" style="display: none; margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
-                <pre style="font-size: 12px; overflow: auto; max-height: 300px;">{{ debug_data }}</pre>
+        <!-- Header -->
+        <div class="header">
+            <h1><i class="fas fa-rocket"></i> Analyseur eBay Pro</h1>
+            <div class="badge">
+                <i class="fas fa-shield-check"></i> API eBay Officielle
             </div>
+            <p style="color: #6b7280;">Analyse professionnelle avec données directes eBay</p>
+        </div>
+        
+        <!-- API Status -->
+        <div class="api-status">
+            <i class="fas fa-plug"></i>
+            <strong>Statut API :</strong> 
+            {% if api_configured %}
+                <span style="color: #059669;">✓ Connecté à l'API eBay</span>
+            {% else %}
+                <span style="color: #dc2626;">✗ API non configurée</span>
+                <p style="margin-top: 10px; font-size: 0.9rem;">
+                    Configurez EBAY_APP_ID, EBAY_CERT_ID et EBAY_ACCESS_TOKEN dans les variables d'environnement.
+                </p>
             {% endif %}
         </div>
-        {% endif %}
+        
+        <!-- Dashboard -->
+        <div class="dashboard">
+            <!-- Input Section -->
+            <div class="input-card">
+                <h2><i class="fas fa-search"></i> Analyse de produit</h2>
+                
+                <form id="analyseForm" method="POST" action="/">
+                    <input type="text" 
+                           class="url-input" 
+                           name="url" 
+                           placeholder="Collez l'URL eBay ou l'Item ID (ex: 273959479131)"
+                           value="273959479131"  <!-- Exemple: Item ID -->
+                           required>
+                    
+                    <button type="submit" class="analyze-btn" id="submitBtn">
+                        <i class="fas fa-chart-line"></i> Analyser avec API eBay
+                    </button>
+                </form>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Connexion à l'API eBay en cours...</p>
+                </div>
+                
+                <div class="quick-links">
+                    <div class="quick-link" onclick="document.querySelector('.url-input').value='273959479131'">
+                        📷 Appareil photo
+                    </div>
+                    <div class="quick-link" onclick="document.querySelector('.url-input').value='305220553186'">
+                        ⌚ Montre
+                    </div>
+                    <div class="quick-link" onclick="document.querySelector('.url-input').value='404043745746'">
+                        🎧 Écouteurs
+                    </div>
+                </div>
+                
+                <div style="margin-top: 30px; font-size: 0.9rem; color: #6b7280;">
+                    <p><i class="fas fa-info-circle"></i> <strong>Format accepté :</strong></p>
+                    <ul style="padding-left: 20px;">
+                        <li>Item ID: <code>273959479131</code></li>
+                        <li>URL complète: <code>https://www.ebay.com/itm/273959479131</code></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Results Section -->
+            <div class="results-card">
+                <h2><i class="fas fa-chart-bar"></i> Résultats</h2>
+                
+                {% if resultats %}
+                    {% if resultats.erreur %}
+                        <div class="error-box">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>Erreur :</strong> {{ resultats.erreur }}
+                        </div>
+                    {% else %}
+                        <!-- Product Display -->
+                        <div class="product-display">
+                            <div class="product-image">
+                                {% if resultats.images %}
+                                <img src="{{ resultats.images[0] }}" alt="Image produit" onerror="this.src='https://via.placeholder.com/300x300?text=Image+non+disponible'">
+                                {% else %}
+                                <div style="padding: 40px; color: #9ca3af;">
+                                    <i class="fas fa-image" style="font-size: 3rem;"></i>
+                                    <p>Image non disponible</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="product-info">
+                                <div class="success-badge">
+                                    <i class="fas fa-check-circle"></i> Données API eBay
+                                </div>
+                                
+                                <h3 style="color: #1f2937; margin-bottom: 10px;">{{ resultats.titre }}</h3>
+                                
+                                <div class="price-tag">
+                                    {{ resultats.prix.value }} {{ resultats.prix.currency }}
+                                </div>
+                                
+                                <div style="color: #6b7280; margin-bottom: 20px;">
+                                    <i class="fas fa-store"></i> {{ resultats.vendeur.nom }} 
+                                    {% if resultats.vendeur.score != 'N/A' %}
+                                    <span style="color: #059669; margin-left: 10px;">
+                                        <i class="fas fa-star"></i> {{ resultats.vendeur.score }}% positif
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                
+                                <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                                    <div>
+                                        <div style="font-size: 0.9rem; color: #6b7280;">État</div>
+                                        <div style="font-weight: 600; color: #1f2937;">{{ resultats.etat }}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.9rem; color: #6b7280;">Localisation</div>
+                                        <div style="font-weight: 600; color: #1f2937;">{{ resultats.localisation }}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.9rem; color: #6b7280;">Quantité</div>
+                                        <div style="font-weight: 600; color: #1f2937;">{{ resultats.quantite_disponible }} disponible(s)</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Metrics -->
+                        <div class="metrics-grid">
+                            <div class="metric-card">
+                                <div class="metric-label">💰 Marge estimée</div>
+                                <div class="metric-value">{{ resultats.analyse.marge }}%</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-label">📈 Score opportunité</div>
+                                <div class="metric-value">{{ resultats.analyse.score }}/100</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-label">🚚 Livraison</div>
+                                <div class="metric-value">{{ resultats.livraison.type }}</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-label">🔍 Vues 30 jours</div>
+                                <div class="metric-value">{{ resultats.statistiques.vues }}</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Recommendations -->
+                        <div class="recommendations">
+                            <h3><i class="fas fa-lightbulb"></i> Recommandations Business</h3>
+                            
+                            {% for rec in resultats.recommandations %}
+                            <div class="rec-item">
+                                <div class="rec-title">{{ rec.titre }}</div>
+                                <div class="rec-desc">{{ rec.description }}</div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        
+                        <!-- Debug Button -->
+                        {% if resultats.debug_data %}
+                        <button class="debug-btn" onclick="toggleDebug()">
+                            <i class="fas fa-code"></i> Afficher les données API brutes
+                        </button>
+                        
+                        <div class="raw-data" id="debugPanel">
+                            <pre id="debugContent">{{ resultats.debug_data }}</pre>
+                        </div>
+                        {% endif %}
+                        
+                    {% endif %}
+                {% else %}
+                    <!-- Empty State -->
+                    <div style="text-align: center; padding: 60px 20px; color: #9ca3af;">
+                        <i class="fas fa-chart-line" style="font-size: 4rem; margin-bottom: 20px;"></i>
+                        <h3>Prêt pour l'analyse</h3>
+                        <p>Entrez un Item ID ou URL eBay pour commencer l'analyse</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
     
     <script>
+    // Gestion du formulaire
+    document.getElementById('analyseForm').addEventListener('submit', function(e) {
+        const btn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connexion API...';
+        loading.style.display = 'block';
+    });
+    
+    // Toggle debug panel
     function toggleDebug() {
-        var panel = document.getElementById('debugPanel');
-        if (panel.style.display === 'none') {
+        const panel = document.getElementById('debugPanel');
+        if (panel.style.display === 'none' || panel.style.display === '') {
             panel.style.display = 'block';
         } else {
             panel.style.display = 'none';
         }
     }
+    
+    // Auto-format URL
+    document.querySelector('.url-input').addEventListener('input', function(e) {
+        let value = e.target.value;
+        // Extraire l'Item ID de l'URL si nécessaire
+        if (value.includes('ebay.com/itm/')) {
+            const match = value.match(/itm\/(\d+)/);
+            if (match) {
+                e.target.value = match[1];  // Retirer le 'v' préfixe
+            }
+        }
+    });
+    
+    // Page load - restore debug panel state
+    window.addEventListener('load', function() {
+        const debugContent = document.getElementById('debugContent');
+        if (debugContent) {
+            try {
+                // Pretty print JSON
+                const data = JSON.parse(debugContent.textContent);
+                debugContent.textContent = JSON.stringify(data, null, 2);
+            } catch(e) {
+                console.log("Données debug non JSON");
+            }
+        }
+    });
     </script>
 </body>
 </html>
 '''
 
-class SmartEBayScraper:
-    """Scraper intelligent avec contournement des blocs"""
-    
-    def __init__(self):
-        self.session = requests.Session()
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
-        ]
-        self.setup_session()
-    
-    def setup_session(self):
-        """Configure la session avec headers réalistes"""
-        self.session.headers.update({
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Cache-Control': 'max-age=0',
-            'DNT': '1',
-            'Referer': 'https://www.google.com/'
-        })
-    
-    def rotate_user_agent(self):
-        """Change l'User-Agent à chaque requête"""
-        self.session.headers['User-Agent'] = random.choice(self.user_agents)
-    
-    def fetch_with_retry(self, url, max_retries=3):
-        """Télécharge avec plusieurs tentatives intelligentes"""
-        for attempt in range(max_retries):
-            try:
-                print(f"🔁 Tentative {attempt + 1}/{max_retries} pour {url}")
-                
-                # Rotation d'User-Agent
-                self.rotate_user_agent()
-                
-                # Délai intelligent entre tentatives
-                if attempt > 0:
-                    wait_time = random.uniform(2, 5) * (attempt + 1)
-                    print(f"⏳ Attente de {wait_time:.1f} secondes...")
-                    time.sleep(wait_time)
-                
-                # Timeout adaptatif
-                timeout_val = 20 + (attempt * 5)
-                
-                # Faire la requête
-                response = self.session.get(
-                    url, 
-                    timeout=timeout_val,
-                    allow_redirects=True,
-                    verify=True
-                )
-                
-                print(f"📊 Statut: {response.status_code}, Taille: {len(response.text)} caractères")
-                
-                # Vérifier si bloqué
-                if response.status_code == 503:
-                    print("🚫 eBay a retourné 503 (Service Unavailable)")
-                    if attempt < max_retries - 1:
-                        print("🔄 Nouvelle tentative avec stratégie différente...")
-                        continue
-                    else:
-                        raise Exception("eBay bloque l'accès (503 après plusieurs tentatives)")
-                
-                if response.status_code != 200:
-                    raise Exception(f"Statut HTTP {response.status_code}")
-                
-                # Vérifier si c'est une page valide
-                if len(response.text) < 5000:
-                    raise Exception("Page trop courte (probablement bloquée)")
-                
-                print(f"✅ Succès après {attempt + 1} tentative(s)")
-                return response
-                
-            except requests.exceptions.Timeout:
-                print(f"⏱️ Timeout tentative {attempt + 1}")
-                if attempt == max_retries - 1:
-                    raise Exception("eBay ne répond pas (timeout)")
-                    
-            except requests.exceptions.ConnectionError:
-                print(f"🔌 Erreur de connexion tentative {attempt + 1}")
-                if attempt == max_retries - 1:
-                    raise Exception("Impossible de se connecter à eBay")
-                    
-            except Exception as e:
-                print(f"⚠️ Erreur tentative {attempt + 1}: {str(e)[:80]}")
-                if attempt == max_retries - 1:
-                    raise
-    
-    def extract_product_data(self, response):
-        """Extrait les données du produit depuis la réponse"""
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        product_data = {
-            'url': response.url,
-            'date_analyse': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'titre_original': 'Non trouvé',
-            'prix': '0',
-            'vendeur': 'Non trouvé',
-            'livraison': 'Non spécifié',
-            'localisation': 'Non spécifié'
-        }
-        
-        # Titre - plusieurs méthodes
-        title_selectors = ['h1.it-ttl', 'h1.x-item-title', 'h1.product-title', 'h1']
-        for selector in title_selectors:
-            title_elem = soup.select_one(selector)
-            if title_elem:
-                title_text = title_elem.get_text(strip=True)
-                if title_text and len(title_text) > 10:
-                    product_data['titre_original'] = title_text[:200]
-                    break
-        
-        # Prix - chercher dans plusieurs endroits
-        html_text = response.text
-        price_patterns = [
-            r'"price":\s*"([\d\.,]+)"',
-            r'itemprop="price"[^>]*content="([^"]+)"',
-            r'data-price=["\']([\d\.,]+)["\']',
-            r'["\']currentPrice["\'][^:]*:\s*["\']([\d\.,]+)'
-        ]
-        
-        for pattern in price_patterns:
-            matches = re.findall(pattern, html_text)
-            if matches:
-                price = matches[0] if isinstance(matches[0], str) else matches[0][0]
-                if price and re.match(r'^[\d\.,]+$', str(price)):
-                    product_data['prix'] = price.replace(',', '.')
-                    break
-        
-        return product_data
-    
-    def scrape(self, url):
-        """Méthode principale de scraping"""
-        debug_info = {
-            'url': url,
-            'attempts': 0,
-            'status': 0,
-            'page_size': 0,
-            'final_user_agent': '',
-            'price_found': False,
-            'error_history': []
-        }
-        
-        try:
-            # Ajouter https:// si absent
-            if not url.startswith('http'):
-                url = 'https://' + url
-            
-            # Forcer .com si .fr (plus fiable)
-            if 'ebay.fr' in url:
-                url = url.replace('ebay.fr', 'ebay.com')
-                print(f"🔄 Changement automatique vers .com: {url}")
-            
-            print(f"\n🎯 DÉBUT ANALYSE: {url}")
-            print(f"🕒 {datetime.now().strftime('%H:%M:%S')}")
-            
-            # Faire la requête
-            response = self.fetch_with_retry(url, max_retries=3)
-            
-            # Enregistrer les infos debug
-            debug_info['status'] = response.status_code
-            debug_info['page_size'] = len(response.text)
-            debug_info['final_user_agent'] = self.session.headers['User-Agent'][:80]
-            
-            # Extraire les données
-            product_data = self.extract_product_data(response)
-            debug_info['price_found'] = product_data['prix'] != '0'
-            
-            print(f"✅ SCRAPING RÉUSSI!")
-            print(f"📌 Titre: {product_data['titre_original'][:50]}...")
-            print(f"💰 Prix: {product_data['prix']}")
-            print(f"📏 Taille page: {debug_info['page_size']} caractères")
-            
-            return product_data, debug_info
-            
-        except Exception as e:
-            error_msg = str(e)
-            debug_info['error_history'].append(error_msg)
-            print(f"❌ ÉCHEC: {error_msg}")
-            
-            if '503' in error_msg:
-                return None, {
-                    **debug_info,
-                    'specific_error': 'EBAY_503_BLOCK',
-                    'recommendation': 'eBay bloque notre IP. Attendez 1-2 minutes et réessayez.'
-                }
-            elif 'timeout' in error_msg.lower():
-                return None, {
-                    **debug_info,
-                    'specific_error': 'EBAY_TIMEOUT',
-                    'recommendation': 'eBay est lent à répondre. Réessayez.'
-                }
-            else:
-                return None, {
-                    **debug_info,
-                    'specific_error': 'UNKNOWN_ERROR',
-                    'recommendation': 'Erreur inconnue. Vérifiez l\'URL.'
-                }
+# ========== CLIENT API EBAY ==========
 
-class BusinessAnalyzerSimple:
-    """Analyseur business simplifié"""
+class EBayAPIClient:
+    """Client pour l'API eBay Officielle"""
     
-    def calculate_profitability(self, ebay_price_str):
-        """Calcule la rentabilité estimée"""
-        try:
-            ebay_price = float(ebay_price_str) if ebay_price_str and ebay_price_str != '0' else 0
-            
-            if ebay_price == 0:
-                return {
-                    'prix_ebay': 0,
-                    'cout_produit': 0,
-                    'profit_net': 0,
-                    'marge_pourcentage': 0,
-                    'note': 'Prix non trouvé'
-                }
-            
-            # Estimation des coûts (pour Crest 3D par exemple)
-            pinduoduo_price_usd = 8  # Prix sur Pinduoduo en USD
-            pinduoduo_eur = pinduoduo_price_usd * 0.85  # Conversion USD→EUR
-            
-            # Coûts fixes
-            frais_ebay = ebay_price * 0.10  # 10% frais eBay
-            frais_paypal = ebay_price * 0.03  # 3% frais PayPal
-            frais_livraison = 5.0  # €
-            cout_emballage = 1.0  # €
-            
-            # Calcul pour un lot de 25 unités (stratégie volume)
-            quantity = 25
-            cout_total_produits = pinduoduo_eur * quantity
-            cout_total = cout_total_produits + frais_livraison + cout_emballage
-            
-            # Revenu pour le lot
-            revenu_lot = ebay_price * quantity
-            frais_total = (frais_ebay + frais_paypal) * quantity
-            
-            # Profit
-            profit_net_lot = revenu_lot - (cout_total + frais_total)
-            profit_net_unit = profit_net_lot / quantity if quantity > 0 else 0
-            marge_pourcentage = (profit_net_unit / ebay_price) * 100 if ebay_price > 0 else 0
-            
-            return {
-                'prix_ebay': round(ebay_price, 2),
-                'cout_produit': round(pinduoduo_eur, 2),
-                'cout_total_lot': round(cout_total, 2),
-                'profit_net': round(profit_net_unit, 2),
-                'profit_lot': round(profit_net_lot, 2),
-                'marge_pourcentage': round(marge_pourcentage, 1),
-                'quantite_recommandee': quantity,
-                'note': f'Basé sur lot de {quantity} unités'
-            }
-            
-        except Exception as e:
-            print(f"❌ Erreur calcul rentabilité: {e}")
-            return {
-                'prix_ebay': 0,
-                'cout_produit': 0,
-                'profit_net': 0,
-                'marge_pourcentage': 0,
-                'note': 'Erreur de calcul'
-            }
+    def __init__(self, app_id, cert_id, access_token):
+        self.app_id = app_id
+        self.cert_id = cert_id
+        self.access_token = access_token
+        self.base_url = "https://api.ebay.com/buy/browse/v1"
+        
+        print(f"✅ Client API eBay initialisé (App ID: {app_id[:10]}...)")
     
-    def generate_recommendations(self, product_data, profitability):
-        """Génère des recommandations business"""
-        recommendations = {
-            'prix': [],
-            'strategie': [],
-            'logistique': []
+    def extract_item_id(self, input_str):
+        """Extrait l'Item ID depuis une URL ou un ID"""
+        # Nettoyer la chaîne
+        input_str = input_str.strip()
+        
+        # Si c'est déjà un Item ID (format: v123456789012)
+        if input_str.startswith('v') and input_str[1:].isdigit():
+            return input_str[1:]  # Enlever le 'v'
+        
+        # Si c'est une URL eBay
+        if 'ebay.com/itm/' in input_str:
+            # Pattern plus robuste pour extraire l'ID
+            patterns = [
+                r'/itm/(\d+)',
+                r'/(\d+)\?',
+                r'/(\d+)$'
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, input_str)
+                if match:
+                    return match.group(1)
+        
+        # Si c'est juste un numéro
+        if input_str.isdigit():
+            return input_str
+        
+        raise ValueError(f"Format non reconnu: {input_str}")
+    
+    def get_item(self, item_id):
+        """Récupère les détails d'un item via l'API"""
+        headers = {
+            'Authorization': f'Bearer {self.access_token}',
+            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_FR',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         }
         
-        titre = product_data.get('titre_original', '').lower()
-        marge = profitability['marge_pourcentage']
+        # CORRECTION: Endpoint correct pour l'API Browse v1
+        url = f"{self.base_url}/item/{item_id}"
         
-        # Recommandations de prix
-        if marge > 40:
-            recommendations['prix'].append({
-                'label': '💰 Stratégie',
-                'valeur': 'Premium - Garder prix élevé'
+        print(f"📡 Appel API eBay pour l'item: {item_id}")
+        print(f"🔗 URL: {url}")
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            # Debug logging
+            print(f"📊 Status Code: {response.status_code}")
+            print(f"📊 Headers: {response.headers}")
+            
+            if response.status_code != 200:
+                print(f"❌ Erreur API: {response.text}")
+                if response.status_code == 404:
+                    raise Exception(f"Item non trouvé: {item_id}")
+                elif response.status_code == 401:
+                    raise Exception("Token API invalide ou expiré. Vérifiez EBAY_ACCESS_TOKEN")
+                elif response.status_code == 403:
+                    raise Exception("Accès refusé - Vérifiez vos credentials API")
+                else:
+                    raise Exception(f"Erreur API eBay {response.status_code}: {response.text}")
+            
+            data = response.json()
+            print(f"✅ Réponse API reçue ({len(str(data))} caractères)")
+            return data
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Erreur de connexion à l'API eBay: {str(e)}")
+    
+    def search_items(self, keywords, limit=5):
+        """Recherche des items par mots-clés"""
+        headers = {
+            'Authorization': f'Bearer {self.access_token}',
+            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_FR',
+            'Content-Type': 'application/json'
+        }
+        
+        params = {
+            'q': keywords,
+            'limit': str(limit),
+            'filter': 'buyingOptions:{FIXED_PRICE}'
+        }
+        
+        url = f"{self.base_url}/item_summary/search"
+        
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"❌ Erreur recherche: {str(e)}")
+            return None
+
+# ========== ANALYSEUR BUSINESS ==========
+
+class EBayBusinessAnalyzer:
+    """Analyseur business pour les données eBay"""
+    
+    def analyze_item_data(self, item_data):
+        """Analyse les données d'un item pour les opportunités business"""
+        
+        try:
+            # Informations de base (structure de réponse API eBay)
+            title = item_data.get('title', 'Non disponible')
+            price_data = item_data.get('price', {})
+            
+            # Prix
+            price_value = price_data.get('value', '0') if price_data else '0'
+            price_currency = price_data.get('currency', 'EUR') if price_data else 'EUR'
+            
+            # Calcul de rentabilité (exemple pour Crest 3D)
+            try:
+                prix_ebay = float(price_value)
+                
+                # Coûts estimés
+                cout_produit = 8 * 0.85  # Pinduoduo 8$ → EUR
+                frais_ebay = prix_ebay * 0.10
+                frais_paypal = prix_ebay * 0.03
+                frais_livraison = 5.0
+                
+                profit_net = prix_ebay - (cout_produit + frais_ebay + frais_paypal + frais_livraison)
+                marge = (profit_net / prix_ebay) * 100 if prix_ebay > 0 else 0
+                
+                # Score d'opportunité
+                score = self.calculate_opportunity_score(prix_ebay, marge, item_data)
+                
+            except Exception as e:
+                print(f"⚠️ Erreur calcul rentabilité: {e}")
+                profit_net = 0
+                marge = 0
+                score = 50
+            
+            # Récupérer les images
+            images = []
+            if 'image' in item_data:
+                images.append(item_data['image'].get('imageUrl', ''))
+            elif 'additionalImages' in item_data:
+                for img in item_data['additionalImages']:
+                    if img.get('imageUrl'):
+                        images.append(img['imageUrl'])
+            
+            # Vendeur info
+            seller = item_data.get('seller', {})
+            
+            # Formatage des résultats
+            resultats = {
+                'titre': title,
+                'prix': {
+                    'value': price_value,
+                    'currency': price_currency
+                },
+                'vendeur': {
+                    'nom': seller.get('username', 'Non disponible'),
+                    'score': seller.get('feedbackPercentage', 'N/A'),
+                    'score_absolu': seller.get('feedbackScore', 'N/A')
+                },
+                'etat': item_data.get('condition', 'Non spécifié'),
+                'localisation': item_data.get('itemLocation', {}).get('country', 'Non spécifié'),
+                'quantite_disponible': item_data.get('estimatedAvailabilities', [{}])[0].get('estimatedAvailableQuantity', 1),
+                'images': images,
+                'description': item_data.get('shortDescription', '')[:500] or item_data.get('description', '')[:500],
+                'livraison': {
+                    'type': 'Livraison standard',
+                    'cout': item_data.get('shippingOptions', [{}])[0].get('shippingCost', {}).get('value', '0') if item_data.get('shippingOptions') else '0'
+                },
+                'statistiques': {
+                    'vues': item_data.get('itemAffiliateWebUrl', 'N/A'),  # Pas directement disponible dans Browse API
+                    'suiveurs': 'N/A'
+                },
+                'analyse': {
+                    'profit_net': round(profit_net, 2),
+                    'marge': round(marge, 1),
+                    'score': score,
+                    'verdict': self.get_verdict(score)
+                },
+                'recommandations': self.generate_recommendations(title, marge, prix_ebay),
+                'debug_data': json.dumps(item_data, indent=2, ensure_ascii=False)  # Données brutes pour debug
+            }
+            
+            return resultats
+            
+        except Exception as e:
+            print(f"❌ Erreur analyse: {str(e)}")
+            raise Exception(f"Erreur lors de l'analyse: {str(e)}")
+    
+    def calculate_opportunity_score(self, price, margin, item_data):
+        """Calcule un score d'opportunité sur 100"""
+        score = 0
+        
+        # Marge (40 points max)
+        if margin > 50:
+            score += 40
+        elif margin > 40:
+            score += 35
+        elif margin > 30:
+            score += 30
+        elif margin > 20:
+            score += 20
+        elif margin > 10:
+            score += 10
+        
+        # Prix (20 points max)
+        if 20 < price < 100:  # Segment idéal
+            score += 20
+        elif price > 100:
+            score += 15
+        elif price > 50:
+            score += 10
+        
+        # Vendeur (20 points max)
+        seller_feedback = item_data.get('seller', {}).get('feedbackPercentage', 0)
+        try:
+            feedback = float(str(seller_feedback).replace('%', ''))
+            if feedback > 98:
+                score += 20
+            elif feedback > 95:
+                score += 15
+            elif feedback > 90:
+                score += 10
+        except:
+            pass
+        
+        # Popularité (20 points max) - estimé basé sur le prix
+        if price < 50:
+            score += 15  # Prix bas = plus populaire
+        elif price < 100:
+            score += 10
+        
+        return min(100, score)
+    
+    def get_verdict(self, score):
+        if score >= 80:
+            return "🎯 EXCELLENTE OPPORTUNITÉ"
+        elif score >= 65:
+            return "✅ BONNE OPPORTUNITÉ"
+        elif score >= 50:
+            return "⚠️ OPPORTUNITÉ MOYENNE"
+        else:
+            return "❌ NON RECOMMANDÉ"
+    
+    def generate_recommendations(self, titre, margin, price):
+        """Génère des recommandations business"""
+        recommendations = []
+        titre_lower = titre.lower()
+        
+        # Recommandation prix
+        if margin > 40:
+            recommendations.append({
+                'titre': '💰 Stratégie Premium',
+                'description': f'Conserver prix à {price:.2f}€ (marge {margin:.1f}%)'
             })
-            recommendations['prix'].append({
-                'label': '🎯 Marge',
-                'valeur': f'{marge}% (excellente)'
-            })
-        elif marge > 25:
-            recommendations['prix'].append({
-                'label': '💰 Stratégie',
-                'valeur': 'Compétitif - Prix moyen pour volume'
+        elif margin > 25:
+            prix_suggere = price * 0.9
+            recommendations.append({
+                'titre': '💰 Stratégie Compétitive',
+                'description': f'Réduire à {prix_suggere:.2f}€ pour gagner en volume'
             })
         else:
-            recommendations['prix'].append({
-                'label': '💰 Stratégie',
-                'valeur': 'Agrressif - Prix bas pour pénétration'
+            recommendations.append({
+                'titre': '💰 Stratégie Agressive',
+                'description': f'Prix bas ({price*0.8:.2f}€) pour pénétration marché'
             })
         
-        # Recommandations spécifiques pour blanchiment dentaire
-        if any(kw in titre for kw in ['crest', 'whitening', 'blanchiment', 'teeth', 'dental']):
-            recommendations['strategie'].append({
-                'label': '🦷 Niche',
-                'valeur': 'Produit de beauté à demande stable'
+        # Recommandations spécifiques par catégorie
+        if any(kw in titre_lower for kw in ['crest', 'whitening', 'blanchiment', 'teeth', 'dent']):
+            recommendations.append({
+                'titre': '🦷 Spécialisation Dentaire',
+                'description': 'Focus sur niche blanchiment dentaire (demande stable)'
             })
-            recommendations['strategie'].append({
-                'label': '📈 Marketing',
-                'valeur': 'Cibler "Crest 3D" (5000 recherches/mois)'
+            recommendations.append({
+                'titre': '📢 Marketing Ciblé',
+                'description': 'Google Ads sur "blanchiment dentaire" (5000 recherches/mois)'
             })
-            recommendations['logistique'].append({
-                'label': '📦 Packaging',
-                'valeur': 'Kit premium avec notice française'
+        elif any(kw in titre_lower for kw in ['watch', 'montre', 'clock']):
+            recommendations.append({
+                'titre': '⌚ Segment Luxe/Entrée Gamme',
+                'description': 'Cibler les montres intelligentes ou vintage'
+            })
+        elif any(kw in titre_lower for kw in ['camera', 'appareil', 'photo']):
+            recommendations.append({
+                'titre': '📷 Accessoires Premium',
+                'description': 'Vendre avec accessoires (piles, cartes mémoire)'
             })
         
-        # Recommandations logistiques générales
-        recommendations['logistique'].append({
-            'label': '🚚 Livraison',
-            'valeur': 'Offrir suivi (vs 20 jours concurrent)'
+        # Recommandations générales
+        recommendations.append({
+            'titre': '📦 Packaging Premium',
+            'description': 'Emballage français avec notice professionnelle'
         })
-        recommendations['logistique'].append({
-            'label': '📊 Quantité',
-            'valeur': f"Lot de {profitability['quantite_recommandee']} unités"
+        
+        recommendations.append({
+            'titre': '🚚 Livraison Rapide',
+            'description': 'Offrir suivi sous 3-7 jours (vs 20 jours concurrent)'
+        })
+        
+        recommendations.append({
+            'titre': '📊 Analyse Concurrentielle',
+            'description': 'Surveiller prix concurrents et ajuster stratégie'
         })
         
         return recommendations
 
 # ========== INITIALISATION ==========
-scraper = SmartEBayScraper()
-business_analyzer = BusinessAnalyzerSimple()
+api_configured = bool(EBAY_APP_ID and EBAY_CERT_ID and EBAY_ACCESS_TOKEN)
+
+if api_configured:
+    try:
+        ebay_client = EBayAPIClient(EBAY_APP_ID, EBAY_CERT_ID, EBAY_ACCESS_TOKEN)
+        business_analyzer = EBayBusinessAnalyzer()
+        print("✅ Analyseur business initialisé")
+    except Exception as e:
+        print(f"❌ Erreur initialisation: {e}")
+        api_configured = False
+        ebay_client = None
+        business_analyzer = None
+else:
+    print("⚠️ API eBay non configurée. Configurez les variables d'environnement.")
+    ebay_client = None
+    business_analyzer = None
+
+# ========== ROUTES ==========
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    """Page principale"""
     if request.method == 'POST':
-        url = request.form.get('url', '').strip()
+        url_or_id = request.form.get('url', '').strip()
         
-        if not url:
-            return render_template_string(HTML, resultats={
-                'erreur': 'Veuillez entrer une URL eBay'
-            }, debug_data=None)
+        if not url_or_id:
+            return render_template_string(HTML, 
+                resultats={'erreur': 'Veuillez entrer un Item ID ou URL'},
+                api_configured=api_configured)
+        
+        if not api_configured or not ebay_client:
+            return render_template_string(HTML,
+                resultats={'erreur': 'API eBay non configurée. Configurez EBAY_APP_ID, EBAY_CERT_ID et EBAY_ACCESS_TOKEN.'},
+                api_configured=api_configured)
         
         try:
-            # 1. Scraper le produit
-            product_data, debug_info = scraper.scrape(url)
+            # 1. Extraire l'Item ID
+            item_id = ebay_client.extract_item_id(url_or_id)
+            print(f"🔍 Item ID extrait: {item_id}")
             
-            # 2. Si échec avec raison spécifique
-            if not product_data:
-                error_type = debug_info.get('specific_error', 'UNKNOWN')
-                
-                if error_type == 'EBAY_503_BLOCK':
-                    return render_template_string(HTML, resultats={
-                        'erreur': 'eBay bloque temporairement notre accès (erreur 503). Recommandations: 1) Attendez 1 minute 2) Utilisez .com 3) Essayez une autre URL'
-                    }, debug_data=json.dumps(debug_info, indent=2))
-                else:
-                    return render_template_string(HTML, resultats={
-                        'erreur': f'Impossible d\'accéder à la page: {debug_info.get("error_history", ["Erreur inconnue"])[0]}'
-                    }, debug_data=json.dumps(debug_info, indent=2))
+            # 2. Récupérer les données via l'API
+            item_data = ebay_client.get_item(item_id)
             
-            # 3. Analyser la rentabilité
-            profitability = business_analyzer.calculate_profitability(product_data['prix'])
+            # 3. Analyser pour les opportunités business
+            resultats = business_analyzer.analyze_item_data(item_data)
             
-            # 4. Générer les recommandations
-            recommendations = business_analyzer.generate_recommendations(product_data, profitability)
-            
-            # 5. Préparer les résultats
-            resultats = {
-                'produit': product_data,
-                'profitability': profitability,
-                'recommandations': recommendations,
-                'erreur': None
-            }
-            
-            return render_template_string(HTML, resultats=resultats, debug_data=json.dumps(debug_info, indent=2))
+            return render_template_string(HTML, resultats=resultats, api_configured=api_configured)
             
         except Exception as e:
-            print(f"❌ Erreur globale: {e}")
-            return render_template_string(HTML, resultats={
-                'erreur': f'Erreur: {str(e)[:150]}'
-            }, debug_data=None)
+            error_msg = str(e)
+            print(f"❌ Erreur: {error_msg}")
+            return render_template_string(HTML,
+                resultats={'erreur': error_msg},
+                api_configured=api_configured)
     
-    return render_template_string(HTML, resultats=None, debug_data=None)
+    return render_template_string(HTML, resultats=None, api_configured=api_configured)
+
+@app.route('/api/search/<keywords>')
+def search_items(keywords):
+    """Recherche d'items par mots-clés"""
+    if not api_configured:
+        return jsonify({'error': 'API non configurée'}), 400
+    
+    try:
+        results = ebay_client.search_items(keywords, limit=10)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/health')
+def health():
+    """Health check"""
+    return jsonify({
+        'status': 'healthy' if api_configured else 'api_missing',
+        'api_configured': api_configured,
+        'ebay_app_id': f"{EBAY_APP_ID[:5]}..." if EBAY_APP_ID else 'missing',
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/test/<item_id>')
+def test_item(item_id):
+    """Endpoint de test direct"""
+    if not api_configured:
+        return jsonify({'error': 'API non configurée'}), 400
+    
+    try:
+        item_data = ebay_client.get_item(item_id)
+        return jsonify({
+            'success': True,
+            'item_id': item_id,
+            'title': item_data.get('title', 'No title'),
+            'price': item_data.get('price', {}),
+            'status': 'ok'
+        })
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'item_id': item_id,
+            'status': 'error'
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    print(f"🚀 Analyseur eBay démarré sur le port {port}")
-    print(f"🛡️  Configuration anti-blocage activée")
-    print(f"🎯 Prêt à analyser les produits eBay")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    print("="*60)
+    print("🚀 ANALYSEUR EBAY PRO - API OFFICIELLE")
+    print("="*60)
+    print(f"📡 Port: {port}")
+    print(f"🔑 API eBay: {'✓ CONFIGURÉE' if api_configured else '✗ NON CONFIGURÉE'}")
+    
+    if not api_configured:
+        print("⚠️  Configurez les variables d'environnement:")
+        print("   - EBAY_APP_ID")
+        print("   - EBAY_CERT_ID") 
+        print("   - EBAY_ACCESS_TOKEN")
+        print("\n📚 Documentation: https://developer.ebay.com/api-docs/buy/browse/overview.html")
+        print("💡 Pour obtenir un token: https://developer.ebay.com/api-docs/static/oauth-tokens.html")
+    
+    print("="*60)
+    print("🌐 Démarrage de l'application...")
+    app.run(host='0.0.0.0', port=port, debug=True)  # debug=True pour les erreurs détaillées
