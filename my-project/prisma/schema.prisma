@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Sector {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  icon        String
+  description String
+  createdAt   DateTime @default(now())
+}
+
+model City {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  zipCode   String
+  region    String
+  latitude  Float
+  longitude Float
+  createdAt DateTime @default(now())
+}
+
+model Lead {
+  id        String     @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  website   String?
+  sector    String
+  city      String
+  message   String?
+  status    String     @default("PENDING")
+  source    String     @default("website")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Audit {
+  id                 String   @id @default(cuid())
+  url                String
+  contactName        String
+  contactEmail       String
+  contactPhone       String?
+  sector             String
+  city               String
+  performanceScore   Int
+  accessibilityScore Int
+  bestPracticesScore Int
+  seoScore           Int
+  recommendations    String   @default("")
+  createdAt          DateTime @default(now())
+}
+
+model Portfolio {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  sector      String
+  city        String
+  imageUrl    String?
+  features    String   @default("")
+  isFeatured  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
